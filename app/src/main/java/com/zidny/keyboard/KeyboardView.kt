@@ -11,6 +11,8 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 /** Draws the keys and reports presses to [listener]. Holds no text state itself. */
 @SuppressLint("ViewConstructor")
@@ -75,6 +77,12 @@ class KeyboardView(
         setBackgroundColor(theme.background)
         val pad = dp(4)
         setPadding(pad, pad, pad, pad)
+        // Android 15+ draws the keyboard behind the navigation bar, so lift the keys above it.
+        ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            view.setPadding(pad, pad, pad, pad + bottom)
+            insets
+        }
         render()
     }
 
