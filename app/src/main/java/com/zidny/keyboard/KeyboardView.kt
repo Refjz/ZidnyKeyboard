@@ -201,7 +201,7 @@ class KeyboardView(
                 keyHandler.postDelayed(this, 60)
             }
         }
-        val showAlternates = Runnable { openAlternates(view, key) }
+        val showAlternates = Runnable { if (key is Key.Char) openAlternates(view, key) }
 
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
