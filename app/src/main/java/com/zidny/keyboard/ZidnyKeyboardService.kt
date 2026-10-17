@@ -1,6 +1,7 @@
 package com.zidny.keyboard
 
 import android.inputmethodservice.InputMethodService
+import android.text.InputType
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -47,8 +48,31 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         updateAutoCaps()
     }
 
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        // The cursor moved (a tap, a swipe on the space bar, or a translation): re-check capitals.
+        updateAutoCaps()
+    }
+
     override fun onText(text: String) {
-        currentInputConnection?.commitText(text, 1)
+        val ic = currentInputConnection ?: return
+        if (text == " " && settings.doubleSpacePeriod &&
+            SentenceRules.shouldAddPeriod(ic.getTextBeforeCursor(2, 0) ?: "")
+        ) {
+            ic.beginBatchEdit()
+            ic.deleteSurroundingText(1, 0)
+            ic.commitText(". ", 1)
+            ic.endBatchEdit()
+        } else {
+            ic.commitText(text, 1)
+        }
+        updateAutoCaps()
+    }
+
+    override fun onKeyCode(keyCode: Int) {
+        sendDownUpKeyEvents(keyCode)
         updateAutoCaps()
     }
 
@@ -130,13 +154,32 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     private fun updateAutoCaps() {
         val view = keyboardView ?: return
         if (view.shiftState == KeyboardView.ShiftState.LOCKED) return
-        val info = currentInputEditorInfo ?: return
-        val caps = currentInputConnection?.getCursorCapsMode(info.inputType) ?: 0
-        val wanted = if (caps != 0) KeyboardView.ShiftState.ON else KeyboardView.ShiftState.OFF
+        val wanted = if (shouldCapitalise()) KeyboardView.ShiftState.ON else KeyboardView.ShiftState.OFF
         if (view.shiftState != wanted) view.shiftState = wanted
+    }
+
+    /**
+     * Decides from the text itself rather than only the app's hint, since many apps never ask for
+     * capitals. Fields where a capital would be wrong (e-mail, web address, password) are left alone.
+     */
+    private fun shouldCapitalise(): Boolean {
+        if (!settings.autoCaps) return false
+        val type = currentInputEditorInfo?.inputType ?: return false
+        if (type and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return false
+        if (type and InputType.TYPE_MASK_VARIATION in NO_CAPS_VARIATIONS) return false
+        val before = currentInputConnection?.getTextBeforeCursor(50, 0) ?: return false
+        return SentenceRules.atSentenceStart(before)
     }
 
     private companion object {
         const val MAX_CHARS = 5000
+        val NO_CAPS_VARIATIONS = setOf(
+            InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_URI,
+            InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+        )
     }
 }
