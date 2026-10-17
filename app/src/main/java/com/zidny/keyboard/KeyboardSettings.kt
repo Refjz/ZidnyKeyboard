@@ -61,6 +61,12 @@ data class KeyboardSettings(
     val autoCaps: Boolean = true,
     /** Two spaces in a row type ". " instead. */
     val doubleSpacePeriod: Boolean = true,
+    val suggestions: Boolean = true,
+    val autocorrect: Boolean = true,
+    /** Translate messages the user copies into Indonesian and show them above the keys. */
+    val clipboardTranslate: Boolean = true,
+    /** Show the translation first and only replace the text when the user taps "Pakai". */
+    val translatePreview: Boolean = false,
 ) {
     companion object {
         const val MIN_HEIGHT = 70
@@ -90,6 +96,10 @@ data class KeyboardSettings(
                 numberRow = p.getBoolean("number_row", defaults.numberRow),
                 autoCaps = p.getBoolean("auto_caps", defaults.autoCaps),
                 doubleSpacePeriod = p.getBoolean("double_space_period", defaults.doubleSpacePeriod),
+                suggestions = p.getBoolean("suggestions", defaults.suggestions),
+                autocorrect = p.getBoolean("autocorrect", defaults.autocorrect),
+                clipboardTranslate = p.getBoolean("clipboard_translate", defaults.clipboardTranslate),
+                translatePreview = p.getBoolean("translate_preview", defaults.translatePreview),
             )
         }
 
@@ -107,6 +117,10 @@ data class KeyboardSettings(
                 .putBoolean("number_row", settings.numberRow)
                 .putBoolean("auto_caps", settings.autoCaps)
                 .putBoolean("double_space_period", settings.doubleSpacePeriod)
+                .putBoolean("suggestions", settings.suggestions)
+                .putBoolean("autocorrect", settings.autocorrect)
+                .putBoolean("clipboard_translate", settings.clipboardTranslate)
+                .putBoolean("translate_preview", settings.translatePreview)
                 .apply()
         }
     }

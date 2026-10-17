@@ -1,6 +1,8 @@
 package com.zidny.keyboard
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
@@ -53,8 +55,30 @@ class MainActivity : AppCompatActivity() {
 
         addSettings(root)
         addDownloadButton(root)
+        addMicrophoneButton(root)
+        root.addView(TextView(this).apply {
+            text = getString(R.string.credits)
+            textSize = 12f
+            setPadding(0, pad, 0, 0)
+        })
 
         setContentView(ScrollView(this).apply { addView(root) })
+        if (intent.getBooleanExtra(EXTRA_ASK_MICROPHONE, false)) askMicrophone()
+    }
+
+    private fun askMicrophone() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+        }
+    }
+
+    private fun addMicrophoneButton(root: LinearLayout) {
+        root.addView(heading(getString(R.string.voice_title)))
+        root.addView(label(getString(R.string.voice_hint)))
+        root.addView(Button(this).apply {
+            text = getString(R.string.allow_microphone)
+            setOnClickListener { askMicrophone() }
+        })
     }
 
     private fun addSettings(root: LinearLayout) {
@@ -104,6 +128,14 @@ class MainActivity : AppCompatActivity() {
         addSwitch(root, R.string.auto_caps, settings.autoCaps) { update(settings.copy(autoCaps = it)) }
         addSwitch(root, R.string.double_space_period, settings.doubleSpacePeriod) {
             update(settings.copy(doubleSpacePeriod = it))
+        }
+        addSwitch(root, R.string.suggestions, settings.suggestions) { update(settings.copy(suggestions = it)) }
+        addSwitch(root, R.string.autocorrect, settings.autocorrect) { update(settings.copy(autocorrect = it)) }
+        addSwitch(root, R.string.clipboard_translate, settings.clipboardTranslate) {
+            update(settings.copy(clipboardTranslate = it))
+        }
+        addSwitch(root, R.string.translate_preview, settings.translatePreview) {
+            update(settings.copy(translatePreview = it))
         }
     }
 
@@ -160,6 +192,10 @@ class MainActivity : AppCompatActivity() {
     private fun update(newSettings: KeyboardSettings) {
         settings = newSettings
         KeyboardSettings.save(this, newSettings)
+    }
+
+    companion object {
+        const val EXTRA_ASK_MICROPHONE = "ask_microphone"
     }
 
     private fun heading(text: String) = TextView(this).apply {

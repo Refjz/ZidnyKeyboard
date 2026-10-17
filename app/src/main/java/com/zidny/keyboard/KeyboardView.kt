@@ -14,6 +14,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
@@ -34,12 +35,18 @@ class KeyboardView(
         fun onEnter()
         fun onKeyCode(keyCode: Int)
         fun onTranslate()
+        fun onUndoTranslate()
+        fun onVoice()
         fun onCycleLanguage()
+        /** The user picked [word] from the suggestion bar to replace the word being typed. */
+        fun onSuggestion(word: String)
     }
 
     enum class ShiftState { OFF, ON, LOCKED }
 
     private var showSymbols = false
+    private var showEmoji = false
+    private var emojiCategory = 0
     private var lastShiftTap = 0L
     private val keyHandler = Handler(Looper.getMainLooper())
     private val density = resources.displayMetrics.density
@@ -67,6 +74,11 @@ class KeyboardView(
         setTextColor(Color.WHITE)
         (background as GradientDrawable).setColor(theme.accent)
     }
+    private val undoButton = toolbarButton { listener.onUndoTranslate() }.apply {
+        text = "↶"
+        visibility = GONE
+    }
+    private val micButton = toolbarButton { listener.onVoice() }.apply { text = "🎤" }
     private val statusText = TextView(context).apply {
         setTextColor(theme.secondaryText)
         textSize = 13f
@@ -79,7 +91,74 @@ class KeyboardView(
         orientation = LinearLayout.HORIZONTAL
         addView(languageButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(statusText, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        addView(undoButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        addView(micButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(translateButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+    }
+
+    /** Word suggestions, plus a button that reopens the last message (e.g. a translated copied message). */
+    private val messageChip = TextView(context).apply {
+        gravity = Gravity.CENTER
+        textSize = 16f
+        setPadding(dp(12), 0, dp(12), 0)
+        background = rounded(theme.specialKey)
+        visibility = GONE
+        setOnClickListener { messagePanel.visibility = VISIBLE }
+    }
+    private val suggestionViews = List(3) {
+        TextView(context).apply {
+            gravity = Gravity.CENTER
+            setTextColor(theme.text)
+            textSize = 16f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setOnClickListener { v ->
+                val word = (v as TextView).text.toString()
+                if (word.isNotEmpty()) {
+                    tapFeedback(v, AudioManager.FX_KEYPRESS_STANDARD)
+                    listener.onSuggestion(word)
+                }
+            }
+        }
+    }
+    private val strip = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        addView(messageChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        suggestionViews.forEach { addView(it, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)) }
+    }
+
+    /** A message laid over the keys: a translated copied message, or a translation waiting to be used. */
+    private val messageTitle = TextView(context).apply {
+        setTextColor(theme.secondaryText)
+        textSize = 13f
+    }
+    private val messageBody = TextView(context).apply {
+        setTextColor(theme.text)
+        textSize = 17f
+        setTextIsSelectable(false)
+    }
+    private val messageAction = toolbarButton { messageActionHandler?.invoke() }.apply {
+        setTextColor(Color.WHITE)
+        (background as GradientDrawable).setColor(theme.accent)
+    }
+    private var messageActionHandler: (() -> Unit)? = null
+    private val messagePanel = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(14), dp(10), dp(14), dp(10))
+        background = rounded(theme.background).apply { setStroke(dp(1), theme.specialKey) }
+        elevation = dp(10).toFloat()
+        visibility = GONE
+        // Swallow touches so the keys underneath are not pressed through the panel.
+        isClickable = true
+        addView(messageTitle)
+        addView(ScrollView(context).apply { addView(messageBody) }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            addView(toolbarButton { this@KeyboardView.hideMessagePanel() }.apply { text = "Tutup" },
+                LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(40)).withMargins())
+            addView(messageAction, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(40)).withMargins())
+        }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     }
 
     /** The toolbar and key rows. */
@@ -121,6 +200,9 @@ class KeyboardView(
         addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         overlay.addView(preview, LayoutParams(0, 0))
         overlay.addView(alternatesRow, LayoutParams(LayoutParams.WRAP_CONTENT, 0))
+        overlay.addView(messagePanel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
+            topMargin = dp(TOOLBAR_DP)
+        })
         addView(overlay, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         render()
     }
@@ -132,6 +214,40 @@ class KeyboardView(
 
     fun setStatus(message: String) {
         statusText.text = message
+    }
+
+    fun setSuggestions(words: List<String>) {
+        suggestionViews.forEachIndexed { i, view -> view.text = words.getOrNull(i) ?: "" }
+    }
+
+    fun setUndoVisible(visible: Boolean) {
+        undoButton.visibility = if (visible) VISIBLE else GONE
+    }
+
+    fun setListening(listening: Boolean) {
+        (micButton.background as GradientDrawable).setColor(if (listening) theme.accent else theme.specialKey)
+    }
+
+    /** Shows [body] over the keys. With [actionLabel], a button runs [action]; the 📋 chip reopens it later. */
+    fun showMessage(icon: String, title: String, body: String, actionLabel: String? = null, action: (() -> Unit)? = null) {
+        messageTitle.text = title
+        messageBody.text = body
+        messageActionHandler = action
+        messageAction.text = actionLabel ?: ""
+        messageAction.visibility = if (actionLabel != null) VISIBLE else GONE
+        messageChip.text = icon
+        messageChip.visibility = VISIBLE
+        messagePanel.visibility = VISIBLE
+    }
+
+    fun hideMessagePanel() {
+        messagePanel.visibility = GONE
+    }
+
+    fun clearMessage() {
+        messagePanel.visibility = GONE
+        messageChip.visibility = GONE
+        messageActionHandler = null
     }
 
     fun setTranslating(busy: Boolean) {
@@ -160,7 +276,12 @@ class KeyboardView(
 
     private fun render() {
         content.removeAllViews()
-        content.addView(toolbar, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
+        content.addView(toolbar, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_DP)))
+        content.addView(strip, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
+        if (showEmoji) {
+            renderEmoji()
+            return
+        }
         val layout = if (showSymbols) KeyboardLayouts.symbols else KeyboardLayouts.letters(settings.layout, settings.numberRow)
         val rowHeight = dp(52 * settings.heightPercent / 100)
         for (keys in layout) {
@@ -168,6 +289,51 @@ class KeyboardView(
             for (key in keys) row.addView(createKey(key))
             content.addView(row, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, rowHeight))
         }
+    }
+
+    private fun renderEmoji() {
+        val rowHeight = dp(52 * settings.heightPercent / 100)
+        val tabs = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        EmojiData.categories.forEachIndexed { index, (icon, _) ->
+            tabs.addView(TextView(context).apply {
+                gravity = Gravity.CENTER
+                textSize = 20f
+                text = icon
+                if (index == emojiCategory) background = rounded(theme.specialKey)
+                setOnClickListener {
+                    emojiCategory = index
+                    render()
+                }
+            }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        }
+        content.addView(tabs, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        EmojiData.categories[emojiCategory].second.chunked(EMOJI_COLUMNS).forEach { line ->
+            val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            for (i in 0 until EMOJI_COLUMNS) {
+                val emoji = line.getOrNull(i) ?: ""
+                row.addView(TextView(context).apply {
+                    gravity = Gravity.CENTER
+                    textSize = 26f
+                    text = emoji
+                    if (emoji.isNotEmpty()) setOnClickListener {
+                        tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+                        listener.onText(emoji)
+                    }
+                }, LinearLayout.LayoutParams(0, dp(48), 1f))
+            }
+            grid.addView(row)
+        }
+        // The tabs, grid and bottom row together take the height of the letter rows they replace.
+        val letterRows = KeyboardLayouts.letters(settings.layout, settings.numberRow).size
+        val gridHeight = rowHeight * (letterRows - 1) - dp(40)
+        content.addView(ScrollView(context).apply { addView(grid) },
+            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, gridHeight.coerceAtLeast(dp(120))))
+
+        val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(Key.Letters, Key.Space, Key.Delete).forEach { bottom.addView(createKey(it)) }
+        content.addView(bottom, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, rowHeight))
     }
 
     private fun isSpecial(key: Key) = key !is Key.Char || key.value in listOf(",", ".")
@@ -350,6 +516,7 @@ class KeyboardView(
         Key.Tab -> "Tab"
         Key.Delete -> "⌫"
         Key.Symbols -> "?123"
+        Key.Emoji -> "☺"
         Key.Letters -> "ABC"
         Key.Space -> "spasi"
         Key.Enter -> enterLabel
@@ -379,7 +546,8 @@ class KeyboardView(
             Key.Right -> listener.onKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT)
             Key.Delete -> listener.onDelete()
             Key.Symbols -> { showSymbols = true; render() }
-            Key.Letters -> { showSymbols = false; render() }
+            Key.Letters -> { showSymbols = false; showEmoji = false; render() }
+            Key.Emoji -> { showEmoji = true; render() }
             Key.Space -> listener.onText(" ")
             Key.Enter -> listener.onEnter()
         }
@@ -398,4 +566,10 @@ class KeyboardView(
     }
 
     private fun dp(value: Int) = (value * density).toInt()
+
+    private companion object {
+        const val TOOLBAR_DP = 44
+        const val STRIP_DP = 38
+        const val EMOJI_COLUMNS = 8
+    }
 }
