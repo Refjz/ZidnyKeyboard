@@ -1,0 +1,13 @@
+# Cloudflare Worker that translates text for ZidnyKeyboard.
+# Deployed by .github/workflows/deploy-worker.yml; see server/README.md for setup.
+name = "zidny-translate"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[ai]
+binding = "AI"
+
+[vars]
+PACKAGE_NAME = "com.zidny.keyboard"
+# Set to "false" only while testing without Play Integrity; anyone could then use the server.
+REQUIRE_INTEGRITY = "true"

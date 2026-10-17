@@ -1,7 +1,7 @@
 # ZidnyKeyboard
 
 Keyboard Android yang bisa langsung menerjemahkan kalimat yang sudah diketik ke bahasa lain dengan satu tombol.
-Penerjemahan berjalan offline di HP memakai Google ML Kit, jadi gratis.
+Penerjemahan berjalan di server Cloudflare (Workers AI) yang hanya melayani aplikasi asli dari Google Play. Lihat [server/README.md](server/README.md) untuk cara memasangnya.
 
 Bahasa: Indonesia, Inggris, Prancis, Mandarin, Jepang.
 
