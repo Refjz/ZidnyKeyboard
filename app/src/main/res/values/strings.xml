@@ -18,6 +18,14 @@
     <string name="key_preview">Huruf membesar saat ditekan</string>
     <string name="auto_caps">Huruf besar otomatis di awal kalimat</string>
     <string name="double_space_period">Spasi dua kali jadi titik</string>
+    <string name="suggestions">Saran kata di atas tombol</string>
+    <string name="autocorrect">Perbaiki salah ketik otomatis (tekan hapus untuk membatalkan)</string>
+    <string name="clipboard_translate">Terjemahkan pesan yang disalin ke bahasa Indonesia</string>
+    <string name="translate_preview">Tampilkan hasil terjemahan dulu sebelum mengganti teks</string>
+    <string name="voice_title">Ketik pakai suara</string>
+    <string name="voice_hint">Tekan 🎤 di keyboard, bicara dalam bahasa Indonesia, lalu hasilnya langsung diterjemahkan.</string>
+    <string name="allow_microphone">Izinkan mikrofon</string>
+    <string name="credits">Daftar kata untuk saran: FrequencyWords oleh Hermit Dave (CC BY-SA 4.0), dari OpenSubtitles.</string>
     <string name="languages_title">Paket bahasa</string>
     <string name="download_languages">Unduh semua paket bahasa</string>
     <string name="downloading">Mengunduh paket bahasa…</string>

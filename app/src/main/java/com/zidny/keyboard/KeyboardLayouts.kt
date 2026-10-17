@@ -9,6 +9,7 @@ sealed class Key(val weight: Float = 1f) {
     object Tab : Key(1.5f)
     object Delete : Key(1.5f)
     object Symbols : Key(1.5f)
+    object Emoji : Key(1f)
     object Letters : Key(1.5f)
     object Space : Key(4f)
     object Enter : Key(1.5f)
@@ -45,7 +46,7 @@ object KeyboardLayouts {
     private val numberRow = row("1234567890")
 
     private fun bottomRow(): List<Key> =
-        listOf(Key.Symbols, Key.Char(",", alternates = "!?"), Key.Space, Key.Char(".", alternates = PERIOD_ALTERNATES), Key.Enter)
+        listOf(Key.Symbols, Key.Emoji, Key.Char(",", alternates = "!?"), Key.Space, Key.Char(".", alternates = PERIOD_ALTERNATES), Key.Enter)
 
     fun letters(layout: KeyboardLayout, withNumberRow: Boolean): List<List<Key>> {
         val rows = when (layout) {
