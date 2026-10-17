@@ -20,6 +20,8 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
         fun onText(text: String)
         fun onDelete()
         fun onEnter()
+        fun onTranslate()
+        fun onCycleLanguage()
     }
 
     enum class ShiftState { OFF, ON, LOCKED }
@@ -42,6 +44,26 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
             render()
         }
 
+    private val languageButton = toolbarButton { listener.onCycleLanguage() }
+    private val translateButton = toolbarButton { listener.onTranslate() }.apply {
+        text = "Terjemahkan"
+        (background as GradientDrawable).setColor(Color.parseColor("#2E7D32"))
+    }
+    private val statusText = TextView(context).apply {
+        setTextColor(Color.parseColor("#B0B3B8"))
+        textSize = 13f
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(8), 0, dp(8), 0)
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+    }
+    private val toolbar = LinearLayout(context).apply {
+        orientation = HORIZONTAL
+        addView(languageButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        addView(statusText, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        addView(translateButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+    }
+
     init {
         orientation = VERTICAL
         setBackgroundColor(Color.parseColor("#1E1F22"))
@@ -50,8 +72,40 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
         render()
     }
 
+    /** Shows the target language on the language button, e.g. "→ EN". */
+    fun setTargetLanguage(language: Language) {
+        languageButton.text = "→ ${language.label}"
+    }
+
+    fun setStatus(message: String) {
+        statusText.text = message
+    }
+
+    fun setTranslating(busy: Boolean) {
+        translateButton.isEnabled = !busy
+        translateButton.alpha = if (busy) 0.5f else 1f
+    }
+
+    private fun toolbarButton(onClick: () -> Unit) = TextView(context).apply {
+        gravity = Gravity.CENTER
+        setTextColor(Color.WHITE)
+        textSize = 15f
+        setPadding(dp(14), 0, dp(14), 0)
+        background = GradientDrawable().apply {
+            cornerRadius = dp(6).toFloat()
+            setColor(Color.parseColor("#3A3C41"))
+        }
+        setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onClick()
+        }
+    }
+
+    private fun LayoutParams.withMargins() = apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+
     private fun render() {
         removeAllViews()
+        addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
         val layout = if (showSymbols) KeyboardLayouts.symbols else KeyboardLayouts.letters
         for (keys in layout) {
             val row = LinearLayout(context).apply { orientation = HORIZONTAL }
