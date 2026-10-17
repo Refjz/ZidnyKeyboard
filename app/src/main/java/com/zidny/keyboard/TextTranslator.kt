@@ -30,14 +30,19 @@ class TextTranslator {
     fun translate(text: String, target: Language, onDownloading: () -> Unit, onResult: (Result) -> Unit) {
         identifier.identifyLanguage(text)
             .addOnSuccessListener { tag ->
-                // Unknown or unsupported text falls back to Indonesian (or English when translating into Indonesian).
-                val source = Language.fromCode(tag)
-                    ?: if (target == Language.INDONESIAN) Language.ENGLISH else Language.INDONESIAN
+                // Casual Indonesian is often detected as Malay or not at all, so treat both as Indonesian
+                // (unless translating into Indonesian, where unknown text is most likely English).
+                val source = when {
+                    tag == "ms" -> Language.INDONESIAN
+                    else -> Language.fromCode(tag)
+                        ?: if (target == Language.INDONESIAN) Language.ENGLISH else Language.INDONESIAN
+                }
                 if (source == target) {
                     onResult(Result.AlreadyInTarget(target))
                     return@addOnSuccessListener
                 }
-                translateFrom(source, text, target, onDownloading, onResult)
+                val input = if (source == Language.INDONESIAN) SlangNormalizer.normalize(text) else text
+                translateFrom(source, input, target, onDownloading, onResult)
             }
             .addOnFailureListener { onResult(Result.Error("Gagal mengenali bahasa")) }
     }
