@@ -44,18 +44,33 @@ enum class KeyboardTheme(
 /** Everything the user can change about how the keyboard looks and feels. */
 data class KeyboardSettings(
     val theme: KeyboardTheme = KeyboardTheme.SAMSUNG_LIGHT,
+    val layout: KeyboardLayout = KeyboardLayout.QWERTY,
     /** Key height as a percentage of the default height. */
     val heightPercent: Int = 100,
     /** Letter size in sp. */
     val textSize: Int = 20,
+    /** Space between neighbouring keys in dp. */
+    val keyGap: Int = 6,
+    /** How long a key must be held before its extra characters appear, in ms. */
+    val longPressMs: Int = 350,
     val vibrate: Boolean = true,
+    val sound: Boolean = false,
+    /** Show an enlarged letter above the key while it is pressed. */
+    val keyPreview: Boolean = true,
     val numberRow: Boolean = true,
+    val autoCaps: Boolean = true,
+    /** Two spaces in a row type ". " instead. */
+    val doubleSpacePeriod: Boolean = true,
 ) {
     companion object {
         const val MIN_HEIGHT = 70
         const val MAX_HEIGHT = 140
         const val MIN_TEXT = 14
         const val MAX_TEXT = 28
+        const val MIN_GAP = 0
+        const val MAX_GAP = 12
+        const val MIN_LONG_PRESS = 200
+        const val MAX_LONG_PRESS = 800
 
         private const val PREFS = "settings"
 
@@ -64,20 +79,34 @@ data class KeyboardSettings(
             val defaults = KeyboardSettings()
             return KeyboardSettings(
                 theme = KeyboardTheme.entries.firstOrNull { it.name == p.getString("theme", null) } ?: defaults.theme,
+                layout = KeyboardLayout.entries.firstOrNull { it.name == p.getString("layout", null) } ?: defaults.layout,
                 heightPercent = p.getInt("height_percent", defaults.heightPercent).coerceIn(MIN_HEIGHT, MAX_HEIGHT),
                 textSize = p.getInt("text_size", defaults.textSize).coerceIn(MIN_TEXT, MAX_TEXT),
+                keyGap = p.getInt("key_gap", defaults.keyGap).coerceIn(MIN_GAP, MAX_GAP),
+                longPressMs = p.getInt("long_press_ms", defaults.longPressMs).coerceIn(MIN_LONG_PRESS, MAX_LONG_PRESS),
                 vibrate = p.getBoolean("vibrate", defaults.vibrate),
+                sound = p.getBoolean("sound", defaults.sound),
+                keyPreview = p.getBoolean("key_preview", defaults.keyPreview),
                 numberRow = p.getBoolean("number_row", defaults.numberRow),
+                autoCaps = p.getBoolean("auto_caps", defaults.autoCaps),
+                doubleSpacePeriod = p.getBoolean("double_space_period", defaults.doubleSpacePeriod),
             )
         }
 
         fun save(context: Context, settings: KeyboardSettings) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString("theme", settings.theme.name)
+                .putString("layout", settings.layout.name)
                 .putInt("height_percent", settings.heightPercent)
                 .putInt("text_size", settings.textSize)
+                .putInt("key_gap", settings.keyGap)
+                .putInt("long_press_ms", settings.longPressMs)
                 .putBoolean("vibrate", settings.vibrate)
+                .putBoolean("sound", settings.sound)
+                .putBoolean("key_preview", settings.keyPreview)
                 .putBoolean("number_row", settings.numberRow)
+                .putBoolean("auto_caps", settings.autoCaps)
+                .putBoolean("double_space_period", settings.doubleSpacePeriod)
                 .apply()
         }
     }

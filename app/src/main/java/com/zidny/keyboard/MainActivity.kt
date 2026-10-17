@@ -74,20 +74,45 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(themes)
 
+        root.addView(label(getString(R.string.layout)))
+        val layouts = RadioGroup(this)
+        KeyboardLayout.entries.forEachIndexed { index, layout ->
+            layouts.addView(RadioButton(this).apply {
+                id = index + 1
+                text = layout.displayName
+                isChecked = layout == settings.layout
+            })
+        }
+        layouts.setOnCheckedChangeListener { _, checkedId ->
+            update(settings.copy(layout = KeyboardLayout.entries[checkedId - 1]))
+        }
+        root.addView(layouts)
+
         addSlider(root, R.string.key_height, KeyboardSettings.MIN_HEIGHT, KeyboardSettings.MAX_HEIGHT, 5,
             settings.heightPercent, "%") { update(settings.copy(heightPercent = it)) }
         addSlider(root, R.string.text_size, KeyboardSettings.MIN_TEXT, KeyboardSettings.MAX_TEXT, 1,
             settings.textSize, "") { update(settings.copy(textSize = it)) }
+        addSlider(root, R.string.key_gap, KeyboardSettings.MIN_GAP, KeyboardSettings.MAX_GAP, 1,
+            settings.keyGap, " dp") { update(settings.copy(keyGap = it)) }
+        addSlider(root, R.string.long_press, KeyboardSettings.MIN_LONG_PRESS, KeyboardSettings.MAX_LONG_PRESS, 50,
+            settings.longPressMs, " ms") { update(settings.copy(longPressMs = it)) }
 
+        addSwitch(root, R.string.vibrate, settings.vibrate) { update(settings.copy(vibrate = it)) }
+        addSwitch(root, R.string.sound, settings.sound) { update(settings.copy(sound = it)) }
+        addSwitch(root, R.string.key_preview, settings.keyPreview) { update(settings.copy(keyPreview = it)) }
+        addSwitch(root, R.string.number_row, settings.numberRow) { update(settings.copy(numberRow = it)) }
+        addSwitch(root, R.string.auto_caps, settings.autoCaps) { update(settings.copy(autoCaps = it)) }
+        addSwitch(root, R.string.double_space_period, settings.doubleSpacePeriod) {
+            update(settings.copy(doubleSpacePeriod = it))
+        }
+    }
+
+    private fun addSwitch(root: LinearLayout, labelRes: Int, value: Boolean, onChange: (Boolean) -> Unit) {
         root.addView(SwitchCompat(this).apply {
-            text = getString(R.string.vibrate)
-            isChecked = settings.vibrate
-            setOnCheckedChangeListener { _, on -> update(settings.copy(vibrate = on)) }
-        })
-        root.addView(SwitchCompat(this).apply {
-            text = getString(R.string.number_row)
-            isChecked = settings.numberRow
-            setOnCheckedChangeListener { _, on -> update(settings.copy(numberRow = on)) }
+            text = getString(labelRes)
+            isChecked = value
+            setPadding(0, pad / 4, 0, pad / 4)
+            setOnCheckedChangeListener { _, on -> onChange(on) }
         })
     }
 
