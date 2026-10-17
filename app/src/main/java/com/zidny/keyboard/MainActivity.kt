@@ -42,6 +42,20 @@ class MainActivity : AppCompatActivity() {
         })
         root.addView(EditText(this).apply { hint = getString(R.string.try_here) })
 
+        val downloadStatus = TextView(this).apply { setPadding(0, pad / 2, 0, 0) }
+        root.addView(Button(this).apply {
+            text = getString(R.string.download_languages)
+            setOnClickListener { button ->
+                button.isEnabled = false
+                downloadStatus.text = getString(R.string.downloading)
+                TextTranslator.downloadAll { ok ->
+                    button.isEnabled = true
+                    downloadStatus.text = getString(if (ok) R.string.download_done else R.string.download_failed)
+                }
+            }
+        })
+        root.addView(downloadStatus)
+
         setContentView(root)
     }
 }

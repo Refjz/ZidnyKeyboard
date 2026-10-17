@@ -1,8 +1,12 @@
 <resources>
     <string name="app_name">ZidnyKeyboard</string>
     <string name="setup_title">Selamat datang di ZidnyKeyboard</string>
-    <string name="setup_steps">1. Tekan \"Aktifkan keyboard\" lalu nyalakan ZidnyKeyboard.\n2. Tekan \"Pilih keyboard\" lalu pilih ZidnyKeyboard.\n3. Coba ketik di kolom di bawah ini.</string>
+    <string name="setup_steps">1. Tekan \"Aktifkan keyboard\" lalu nyalakan ZidnyKeyboard.\n2. Tekan \"Pilih keyboard\" lalu pilih ZidnyKeyboard.\n3. Coba ketik di kolom di bawah ini, pilih bahasa tujuan dengan tombol \"→ EN\", lalu tekan \"Terjemahkan\".\n4. Supaya bisa menerjemahkan tanpa internet, unduh semua paket bahasa (sekitar 150 MB, sebaiknya pakai Wi-Fi).</string>
     <string name="enable_keyboard">Aktifkan keyboard</string>
     <string name="choose_keyboard">Pilih keyboard</string>
     <string name="try_here">Coba ketik di sini…</string>
+    <string name="download_languages">Unduh semua paket bahasa</string>
+    <string name="downloading">Mengunduh paket bahasa…</string>
+    <string name="download_done">Semua paket bahasa sudah siap dipakai offline.</string>
+    <string name="download_failed">Gagal mengunduh. Cek koneksi internet lalu coba lagi.</string>
 </resources>
