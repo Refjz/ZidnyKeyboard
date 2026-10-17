@@ -15,8 +15,10 @@ object KeyboardLayouts {
 
     private fun row(chars: String): List<Key> = chars.map { Key.Char(it.toString()) }
 
-    val letters: List<List<Key>> = listOf(
-        row("1234567890"),
+    fun letters(numberRow: Boolean): List<List<Key>> =
+        if (numberRow) listOf(row("1234567890")) + letterRows else letterRows
+
+    private val letterRows: List<List<Key>> = listOf(
         row("qwertyuiop"),
         row("asdfghjkl"),
         listOf<Key>(Key.Shift) + row("zxcvbnm") + Key.Delete,

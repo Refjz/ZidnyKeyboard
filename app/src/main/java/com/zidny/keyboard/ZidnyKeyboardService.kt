@@ -11,6 +11,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     private var keyboardView: KeyboardView? = null
     private val translator by lazy { TextTranslator() }
     private lateinit var target: Language
+    private var settings = KeyboardSettings()
 
     override fun onCreate() {
         super.onCreate()
@@ -22,15 +23,19 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         super.onDestroy()
     }
 
-    override fun onCreateInputView(): View =
-        KeyboardView(this, this).also {
+    override fun onCreateInputView(): View {
+        settings = KeyboardSettings.load(this)
+        return KeyboardView(this, this, settings).also {
             keyboardView = it
             it.setTargetLanguage(target)
             it.setStatus("Ketik, lalu tekan Terjemahkan")
         }
+    }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Rebuild the keys if the user changed size or theme in the settings screen.
+        if (KeyboardSettings.load(this) != settings) setInputView(onCreateInputView())
         keyboardView?.enterLabel = when (info.imeOptions and EditorInfo.IME_MASK_ACTION) {
             EditorInfo.IME_ACTION_SEND -> "Kirim"
             EditorInfo.IME_ACTION_SEARCH -> "Cari"

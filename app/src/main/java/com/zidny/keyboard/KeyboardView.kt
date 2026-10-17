@@ -14,7 +14,11 @@ import android.widget.TextView
 
 /** Draws the keys and reports presses to [listener]. Holds no text state itself. */
 @SuppressLint("ViewConstructor")
-class KeyboardView(context: Context, private val listener: Listener) : LinearLayout(context) {
+class KeyboardView(
+    context: Context,
+    private val listener: Listener,
+    private val settings: KeyboardSettings,
+) : LinearLayout(context) {
 
     interface Listener {
         fun onText(text: String)
@@ -30,6 +34,7 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
     private var lastShiftTap = 0L
     private val repeatHandler = Handler(Looper.getMainLooper())
     private val density = resources.displayMetrics.density
+    private val theme = settings.theme
 
     var shiftState = ShiftState.OFF
         set(value) {
@@ -47,10 +52,11 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
     private val languageButton = toolbarButton { listener.onCycleLanguage() }
     private val translateButton = toolbarButton { listener.onTranslate() }.apply {
         text = "Terjemahkan"
-        (background as GradientDrawable).setColor(Color.parseColor("#2E7D32"))
+        setTextColor(Color.WHITE)
+        (background as GradientDrawable).setColor(theme.accent)
     }
     private val statusText = TextView(context).apply {
-        setTextColor(Color.parseColor("#B0B3B8"))
+        setTextColor(theme.secondaryText)
         textSize = 13f
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(8), 0, dp(8), 0)
@@ -66,7 +72,7 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(Color.parseColor("#1E1F22"))
+        setBackgroundColor(theme.background)
         val pad = dp(4)
         setPadding(pad, pad, pad, pad)
         render()
@@ -88,15 +94,15 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
 
     private fun toolbarButton(onClick: () -> Unit) = TextView(context).apply {
         gravity = Gravity.CENTER
-        setTextColor(Color.WHITE)
+        setTextColor(theme.text)
         textSize = 15f
         setPadding(dp(14), 0, dp(14), 0)
         background = GradientDrawable().apply {
-            cornerRadius = dp(6).toFloat()
-            setColor(Color.parseColor("#3A3C41"))
+            cornerRadius = dp(theme.cornerRadiusDp).toFloat()
+            setColor(theme.specialKey)
         }
         setOnClickListener {
-            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            tapFeedback(it)
             onClick()
         }
     }
@@ -106,11 +112,12 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
     private fun render() {
         removeAllViews()
         addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
-        val layout = if (showSymbols) KeyboardLayouts.symbols else KeyboardLayouts.letters
+        val layout = if (showSymbols) KeyboardLayouts.symbols else KeyboardLayouts.letters(settings.numberRow)
+        val rowHeight = dp(52 * settings.heightPercent / 100)
         for (keys in layout) {
             val row = LinearLayout(context).apply { orientation = HORIZONTAL }
             for (key in keys) row.addView(createKey(key))
-            addView(row, LayoutParams(LayoutParams.MATCH_PARENT, dp(52)))
+            addView(row, LayoutParams(LayoutParams.MATCH_PARENT, rowHeight))
         }
     }
 
@@ -119,12 +126,12 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
         val special = key !is Key.Char || key.value in listOf(",", ".")
         val view = TextView(context).apply {
             gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            textSize = if (key is Key.Char) 20f else 15f
+            setTextColor(theme.text)
+            textSize = if (key is Key.Char) settings.textSize.toFloat() else settings.textSize * 0.75f
             text = labelFor(key)
             background = GradientDrawable().apply {
-                cornerRadius = dp(6).toFloat()
-                setColor(Color.parseColor(if (special) "#3A3C41" else "#4A4D53"))
+                cornerRadius = dp(theme.cornerRadiusDp).toFloat()
+                setColor(if (special) theme.specialKey else theme.key)
             }
         }
         val lp = LayoutParams(0, LayoutParams.MATCH_PARENT, key.weight)
@@ -142,7 +149,7 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
             view.setOnTouchListener { v, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        tapFeedback(v)
                         listener.onDelete()
                         repeatHandler.postDelayed(repeat, 400)
                     }
@@ -152,7 +159,7 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
             }
         } else {
             view.setOnClickListener {
-                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                tapFeedback(it)
                 onKey(key)
             }
         }
@@ -195,6 +202,10 @@ class KeyboardView(context: Context, private val listener: Listener) : LinearLay
             Key.Space -> listener.onText(" ")
             Key.Enter -> listener.onEnter()
         }
+    }
+
+    private fun tapFeedback(view: android.view.View) {
+        if (settings.vibrate) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
     }
 
     private fun dp(value: Int) = (value * density).toInt()
