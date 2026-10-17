@@ -7,7 +7,8 @@ ZidnyKeyboard adalah aplikasi keyboard Android yang bisa menerjemahkan teks yang
 ## Ringkasan
 
 - Teks yang Anda ketik **tidak dikirim ke server mana pun**. Penerjemahan berjalan langsung di HP Anda.
-- Aplikasi ini **tidak** memakai akun, iklan, atau pelacakan analitik dari kami.
+- Aplikasi ini **tidak** memakai akun atau pelacakan analitik dari kami.
+- Layar pengaturan aplikasi menampilkan **iklan dari Google AdMob**. Keyboard-nya sendiri tidak menampilkan iklan, dan teks yang Anda ketik tidak pernah diberikan ke AdMob.
 - Pengaturan Anda (tema, ukuran, bahasa tujuan) hanya disimpan di HP Anda.
 
 ## Data yang diproses
@@ -27,6 +28,10 @@ ZidnyKeyboard adalah aplikasi keyboard Android yang bisa menerjemahkan teks yang
 ## Layanan pihak ketiga
 
 Aplikasi ini memakai Google ML Kit (Translation dan Language Identification) yang berjalan di perangkat. Menurut dokumentasi Google, ML Kit dapat mengirim data penggunaan dan diagnostik secara terbatas ke Google untuk mengukur kinerja dan memperbaiki layanannya. Data ini tidak berisi teks yang Anda ketik. Informasi lebih lanjut: https://developers.google.com/ml-kit/terms dan https://policies.google.com/privacy
+
+## Iklan (Google AdMob)
+
+Layar pengaturan ZidnyKeyboard menampilkan iklan banner dari Google AdMob. Untuk menampilkan dan mengukur iklan, AdMob dapat mengumpulkan data seperti ID iklan perangkat, alamat IP, informasi perangkat, dan interaksi dengan iklan, sesuai kebijakan Google: https://policies.google.com/technologies/ads dan https://policies.google.com/privacy. Di wilayah yang mewajibkan persetujuan (misalnya Uni Eropa dan Inggris), aplikasi akan meminta persetujuan Anda terlebih dahulu. Anda dapat mereset atau mematikan personalisasi iklan lewat pengaturan Google di HP Anda. Iklan tidak pernah ditampilkan di keyboard, dan teks yang Anda ketik tidak dibagikan ke AdMob.
 
 ## Izin aplikasi
 
@@ -54,7 +59,8 @@ _Last updated: 17 October 2026_
 ZidnyKeyboard is an Android keyboard that can translate the text you type.
 
 - Text you type is **never sent to any server**. Translation runs on your device using Google ML Kit, and the app does not store the text.
-- The app has no accounts, no ads and no analytics of its own.
+- The app has no accounts and no analytics of its own.
+- The settings screen (not the keyboard) shows banner ads from Google AdMob, which may collect the advertising ID, IP address, device information and ad interactions under Google's policies (https://policies.google.com/technologies/ads). Consent is asked where the law requires it. Typed text is never shared with AdMob.
 - Your settings (theme, size, target language) are stored only on your device and are deleted when you uninstall the app.
 - Language packs are downloaded from Google servers the first time a language is used, which exposes technical information such as your IP address to Google.
 - Google ML Kit may send limited usage and diagnostic data (not your typed text) to Google; see https://developers.google.com/ml-kit/terms and https://policies.google.com/privacy

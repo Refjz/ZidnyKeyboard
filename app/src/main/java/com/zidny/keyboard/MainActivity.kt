@@ -15,6 +15,12 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.AdSize
+import com.google.android.gms.ads.AdView
+import com.google.android.gms.ads.MobileAds
+import com.google.android.ump.ConsentRequestParameters
+import com.google.android.ump.UserMessagingPlatform
 import androidx.appcompat.widget.SwitchCompat
 
 /** Setup and settings screen: enable the keyboard, pick a theme and size, download language packs. */
@@ -62,8 +68,43 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, pad, 0, 0)
         })
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        // The settings scroll; a banner ad sits fixed at the bottom of the screen.
+        val adContainer = LinearLayout(this)
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(ScrollView(this@MainActivity).apply { addView(root) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(adContainer, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        })
+        loadBannerAfterConsent(adContainer)
         if (intent.getBooleanExtra(EXTRA_ASK_MICROPHONE, false)) askMicrophone()
+    }
+
+    /** Asks for ad consent where the law requires it (e.g. EU), then shows a banner if allowed. */
+    private fun loadBannerAfterConsent(container: LinearLayout) {
+        val consent = UserMessagingPlatform.getConsentInformation(this)
+        val showBanner = {
+            if (consent.canRequestAds()) {
+                MobileAds.initialize(this) {}
+                val width = (resources.displayMetrics.widthPixels / resources.displayMetrics.density).toInt()
+                val banner = AdView(this).apply {
+                    adUnitId = BuildConfig.ADMOB_BANNER_ID
+                    setAdSize(AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(this@MainActivity, width))
+                }
+                container.removeAllViews()
+                container.addView(banner)
+                banner.loadAd(AdRequest.Builder().build())
+            }
+        }
+        consent.requestConsentInfoUpdate(
+            this,
+            ConsentRequestParameters.Builder().build(),
+            {
+                UserMessagingPlatform.loadAndShowConsentFormIfRequired(this) { showBanner() }
+            },
+            { showBanner() },
+        )
     }
 
     private fun askMicrophone() {
