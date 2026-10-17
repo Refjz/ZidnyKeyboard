@@ -21,6 +21,8 @@ jobs:
     env:
       VERSION_CODE: ${{ github.run_number }}
       HAS_UPLOAD_KEY: ${{ secrets.KEYSTORE_BASE64 != '' }}
+      ADMOB_APP_ID: ${{ vars.ADMOB_APP_ID }}
+      ADMOB_BANNER_ID: ${{ vars.ADMOB_BANNER_ID }}
     steps:
       - uses: actions/checkout@v4
 

@@ -14,6 +14,19 @@ android {
         // CI passes an increasing number so every upload to Play has a new version code.
         versionCode = System.getenv("VERSION_CODE")?.toInt() ?: 1
         versionName = System.getenv("VERSION_NAME") ?: "0.1.0"
+
+        // AdMob IDs come from the repository variables ADMOB_APP_ID and ADMOB_BANNER_ID.
+        // Without them Google's test IDs are used, which show sample ads and earn nothing.
+        val admobAppId = System.getenv("ADMOB_APP_ID")?.takeIf { it.isNotBlank() }
+            ?: "ca-app-pub-3940256099942544~3347511713"
+        val admobBannerId = System.getenv("ADMOB_BANNER_ID")?.takeIf { it.isNotBlank() }
+            ?: "ca-app-pub-3940256099942544/9214589741"
+        manifestPlaceholders["admobAppId"] = admobAppId
+        buildConfigField("String", "ADMOB_BANNER_ID", "\"$admobBannerId\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     // The Play upload key is only available in CI (from repository secrets), never in the repo.
@@ -50,6 +63,8 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
+    implementation("com.google.android.ump:user-messaging-platform:3.1.0")
 
     testImplementation("junit:junit:4.13.2")
 }
