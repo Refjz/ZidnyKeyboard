@@ -1,15 +1,14 @@
 package com.zidny.keyboard
 
 import android.content.Context
-import com.google.mlkit.nl.translate.TranslateLanguage
 
-/** The languages the keyboard can translate between. [code] is the ML Kit language code. */
+/** The languages the keyboard can translate between. [code] is the ISO 639-1 code the language detector and the translation server use. */
 enum class Language(val code: String, val label: String, val displayName: String) {
-    INDONESIAN(TranslateLanguage.INDONESIAN, "ID", "Indonesia"),
-    ENGLISH(TranslateLanguage.ENGLISH, "EN", "Inggris"),
-    FRENCH(TranslateLanguage.FRENCH, "FR", "Prancis"),
-    CHINESE(TranslateLanguage.CHINESE, "ZH", "Mandarin"),
-    JAPANESE(TranslateLanguage.JAPANESE, "JA", "Jepang");
+    INDONESIAN("id", "ID", "Indonesia"),
+    ENGLISH("en", "EN", "Inggris"),
+    FRENCH("fr", "FR", "Prancis"),
+    CHINESE("zh", "ZH", "Mandarin"),
+    JAPANESE("ja", "JA", "Jepang");
 
     fun next(): Language = entries[(ordinal + 1) % entries.size]
 

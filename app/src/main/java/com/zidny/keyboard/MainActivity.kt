@@ -60,7 +60,6 @@ class MainActivity : AppCompatActivity() {
         root.addView(EditText(this).apply { hint = getString(R.string.try_here) })
 
         addSettings(root)
-        addDownloadButton(root)
         addMicrophoneButton(root)
         root.addView(TextView(this).apply {
             text = getString(R.string.credits)
@@ -213,22 +212,6 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun addDownloadButton(root: LinearLayout) {
-        root.addView(heading(getString(R.string.languages_title)))
-        val downloadStatus = TextView(this).apply { setPadding(0, pad / 2, 0, 0) }
-        root.addView(Button(this).apply {
-            text = getString(R.string.download_languages)
-            setOnClickListener { button ->
-                button.isEnabled = false
-                downloadStatus.text = getString(R.string.downloading)
-                TextTranslator.downloadAll { ok ->
-                    button.isEnabled = true
-                    downloadStatus.text = getString(if (ok) R.string.download_done else R.string.download_failed)
-                }
-            }
-        })
-        root.addView(downloadStatus)
-    }
 
     private fun update(newSettings: KeyboardSettings) {
         settings = newSettings

@@ -20,7 +20,7 @@ import kotlin.concurrent.thread
 class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private var keyboardView: KeyboardView? = null
-    private val translator by lazy { TextTranslator() }
+    private val translator by lazy { TextTranslator(this) }
     private lateinit var target: Language
     private var settings = KeyboardSettings()
 
@@ -208,11 +208,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         val goal = target
         view.setTranslating(true)
         view.setStatus("Menerjemahkan ke ${goal.displayName}…")
-        translator.translate(
-            original,
-            goal,
-            onDownloading = { view.setStatus("Mengunduh paket bahasa ${goal.displayName}…") },
-        ) { result ->
+        translator.translate(original, goal) { result ->
             view.setTranslating(false)
             when (result) {
                 is TextTranslator.Result.Success -> {
@@ -280,11 +276,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         lastClipText = text
         // Links, numbers and codes are copied all the time and need no translation.
         if ("://" in text || text.count { it.isLetter() } < 4 || ' ' !in text.trim()) return
-        translator.translate(
-            text,
-            Language.INDONESIAN,
-            onDownloading = { view.setStatus("Mengunduh paket bahasa untuk pesan yang disalin…") },
-        ) { result ->
+        translator.translate(text, Language.INDONESIAN) { result ->
             if (result is TextTranslator.Result.Success) {
                 view.showMessage("📋", "Pesan yang kamu salin (${result.source.displayName}) artinya:", result.text)
             }

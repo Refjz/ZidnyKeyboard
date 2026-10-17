@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">ZidnyKeyboard</string>
     <string name="setup_title">Selamat datang di ZidnyKeyboard</string>
-    <string name="setup_steps">1. Tekan \"Aktifkan keyboard\" lalu nyalakan ZidnyKeyboard.\n2. Tekan \"Pilih keyboard\" lalu pilih ZidnyKeyboard.\n3. Coba ketik di kolom di bawah ini, pilih bahasa tujuan dengan tombol \"→ EN\", lalu tekan \"Terjemahkan\".\n4. Atur tema, tata letak, dan ukuran keyboard di bawah. Tahan tombol huruf untuk angka dan huruf beraksen, geser spasi untuk memindahkan kursor. Perubahan langsung terlihat saat keyboard dibuka lagi.\n5. Supaya bisa menerjemahkan tanpa internet, unduh semua paket bahasa (sekitar 150 MB, sebaiknya pakai Wi-Fi).</string>
+    <string name="setup_steps">1. Tekan \"Aktifkan keyboard\" lalu nyalakan ZidnyKeyboard.\n2. Tekan \"Pilih keyboard\" lalu pilih ZidnyKeyboard.\n3. Coba ketik di kolom di bawah ini, pilih bahasa tujuan dengan tombol \"→ EN\", lalu tekan \"Terjemahkan\".\n4. Atur tema, tata letak, dan ukuran keyboard di bawah. Tahan tombol huruf untuk angka dan huruf beraksen, geser spasi untuk memindahkan kursor. Perubahan langsung terlihat saat keyboard dibuka lagi.\n5. Terjemahan butuh koneksi internet.</string>
     <string name="enable_keyboard">Aktifkan keyboard</string>
     <string name="choose_keyboard">Pilih keyboard</string>
     <string name="try_here">Coba ketik di sini…</string>
@@ -20,15 +20,10 @@
     <string name="double_space_period">Spasi dua kali jadi titik</string>
     <string name="suggestions">Saran kata di atas tombol</string>
     <string name="autocorrect">Perbaiki salah ketik otomatis (tekan hapus untuk membatalkan)</string>
-    <string name="clipboard_translate">Terjemahkan pesan yang disalin ke bahasa Indonesia</string>
+    <string name="clipboard_translate">Terjemahkan pesan yang disalin ke bahasa Indonesia (teks dikirim ke server terjemahan)</string>
     <string name="translate_preview">Tampilkan hasil terjemahan dulu sebelum mengganti teks</string>
     <string name="voice_title">Ketik pakai suara</string>
     <string name="voice_hint">Tekan 🎤 di keyboard, bicara dalam bahasa Indonesia, lalu hasilnya langsung diterjemahkan.</string>
     <string name="allow_microphone">Izinkan mikrofon</string>
     <string name="credits">Daftar kata untuk saran: FrequencyWords oleh Hermit Dave (CC BY-SA 4.0), dari OpenSubtitles.</string>
-    <string name="languages_title">Paket bahasa</string>
-    <string name="download_languages">Unduh semua paket bahasa</string>
-    <string name="downloading">Mengunduh paket bahasa…</string>
-    <string name="download_done">Semua paket bahasa sudah siap dipakai offline.</string>
-    <string name="download_failed">Gagal mengunduh. Cek koneksi internet lalu coba lagi.</string>
 </resources>

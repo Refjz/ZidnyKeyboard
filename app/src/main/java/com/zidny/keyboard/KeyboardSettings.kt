@@ -64,7 +64,7 @@ data class KeyboardSettings(
     val suggestions: Boolean = true,
     val autocorrect: Boolean = true,
     /** Translate messages the user copies into Indonesian and show them above the keys. */
-    val clipboardTranslate: Boolean = true,
+    val clipboardTranslate: Boolean = false,
     /** Show the translation first and only replace the text when the user taps "Pakai". */
     val translatePreview: Boolean = false,
 ) {

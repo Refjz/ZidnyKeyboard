@@ -23,6 +23,13 @@ android {
             ?: "ca-app-pub-3940256099942544/9214589741"
         manifestPlaceholders["admobAppId"] = admobAppId
         buildConfigField("String", "ADMOB_BANNER_ID", "\"$admobBannerId\"")
+
+        // The translation server (server/) and the Google Cloud project used for Play Integrity,
+        // from the repository variables TRANSLATE_URL and CLOUD_PROJECT_NUMBER.
+        val translateUrl = System.getenv("TRANSLATE_URL")?.trim() ?: ""
+        val cloudProjectNumber = System.getenv("CLOUD_PROJECT_NUMBER")?.trim()?.toLongOrNull() ?: 0L
+        buildConfigField("String", "TRANSLATE_URL", "\"$translateUrl\"")
+        buildConfigField("long", "CLOUD_PROJECT_NUMBER", "${cloudProjectNumber}L")
     }
 
     buildFeatures {
@@ -61,7 +68,7 @@ android {
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.mlkit:translate:17.0.3")
+    implementation("com.google.android.play:integrity:1.4.0")
     implementation("com.google.mlkit:language-id:17.0.6")
     implementation("com.google.android.gms:play-services-ads:23.6.0")
     implementation("com.google.android.ump:user-messaging-platform:3.1.0")

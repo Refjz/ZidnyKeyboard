@@ -1,18 +1,22 @@
 package com.zidny.keyboard
 
-import com.google.mlkit.common.model.DownloadConditions
-import com.google.mlkit.common.model.RemoteModelManager
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.google.mlkit.nl.languageid.LanguageIdentification
-import com.google.mlkit.nl.translate.TranslateRemoteModel
-import com.google.mlkit.nl.translate.Translation
-import com.google.mlkit.nl.translate.Translator
-import com.google.mlkit.nl.translate.TranslatorOptions
+import org.json.JSONObject
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import kotlin.concurrent.thread
 
 /**
- * Detects the language of a text and translates it on the device with ML Kit.
- * Language packs are downloaded the first time a language is used.
+ * Detects the language of a text on the device, then translates it on the ZidnyKeyboard server
+ * (a Cloudflare Worker). Each request carries a Play Integrity token so the server only answers
+ * genuine copies of the app installed from Google Play.
  */
-class TextTranslator {
+class TextTranslator(context: Context) {
 
     sealed class Result {
         data class Success(val text: String, val source: Language) : Result()
@@ -21,13 +25,11 @@ class TextTranslator {
     }
 
     private val identifier = LanguageIdentification.getClient()
-    private val translators = mutableMapOf<String, Translator>()
+    private val integrity = IntegrityChecker(context)
+    private val main = Handler(Looper.getMainLooper())
 
-    /**
-     * Translates [text] into [target]. [onDownloading] is called when a language pack
-     * has to be downloaded first, so the UI can tell the user why it is slow.
-     */
-    fun translate(text: String, target: Language, onDownloading: () -> Unit, onResult: (Result) -> Unit) {
+    /** Translates [text] into [target] and calls [onResult] on the main thread. */
+    fun translate(text: String, target: Language, onResult: (Result) -> Unit) {
         identifier.identifyLanguage(text)
             .addOnSuccessListener { tag ->
                 // Casual Indonesian is often detected as Malay or not at all, so treat both as Indonesian
@@ -42,67 +44,62 @@ class TextTranslator {
                     return@addOnSuccessListener
                 }
                 val input = if (source == Language.INDONESIAN) SlangNormalizer.normalize(text) else text
-                translateFrom(source, input, target, onDownloading, onResult)
+                translateOnServer(source, input, target, onResult)
             }
             .addOnFailureListener { onResult(Result.Error("Gagal mengenali bahasa")) }
     }
 
-    private fun translateFrom(
-        source: Language,
-        text: String,
-        target: Language,
-        onDownloading: () -> Unit,
-        onResult: (Result) -> Unit,
-    ) {
-        val translator = translators.getOrPut("${source.code}-${target.code}") {
-            Translation.getClient(
-                TranslatorOptions.Builder()
-                    .setSourceLanguage(source.code)
-                    .setTargetLanguage(target.code)
-                    .build()
-            )
+    private fun translateOnServer(source: Language, text: String, target: Language, onResult: (Result) -> Unit) {
+        if (BuildConfig.TRANSLATE_URL.isEmpty()) {
+            onResult(Result.Error("Server terjemahan belum diatur"))
+            return
         }
-        isDownloaded(source, target) { ready ->
-            if (!ready) onDownloading()
-            translator.downloadModelIfNeeded(DownloadConditions.Builder().build())
-                .onSuccessTask { translator.translate(text) }
-                .addOnSuccessListener { onResult(Result.Success(it, source)) }
-                .addOnFailureListener {
-                    onResult(
-                        Result.Error(
-                            if (ready) "Gagal menerjemahkan" else "Gagal mengunduh paket bahasa, cek internet"
-                        )
-                    )
-                }
+        // Must match requestHashInput() in server/src/index.js.
+        val requestHash = sha256Hex("${source.code}|${target.code}|$text")
+        integrity.token(requestHash) { token ->
+            thread(name = "translate") {
+                val result = post(source, text, target, token)
+                main.post { onResult(result) }
+            }
         }
     }
 
-    private fun isDownloaded(source: Language, target: Language, callback: (Boolean) -> Unit) {
-        RemoteModelManager.getInstance().getDownloadedModels(TranslateRemoteModel::class.java)
-            .addOnSuccessListener { models ->
-                val codes = models.map { it.language }.toSet()
-                callback(source.code in codes && target.code in codes)
+    private fun post(source: Language, text: String, target: Language, token: String?): Result {
+        val connection = URL(BuildConfig.TRANSLATE_URL.trimEnd('/') + "/translate").openConnection() as HttpURLConnection
+        return try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = TIMEOUT_MS
+            connection.readTimeout = TIMEOUT_MS
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            if (token != null) connection.setRequestProperty("X-Integrity-Token", token)
+            val body = JSONObject().put("text", text).put("source", source.code).put("target", target.code)
+            connection.outputStream.use { it.write(body.toString().toByteArray()) }
+            when (connection.responseCode) {
+                200 -> {
+                    val reply = connection.inputStream.bufferedReader().use { it.readText() }
+                    Result.Success(JSONObject(reply).getString("text"), source)
+                }
+                403 -> Result.Error("Terjemahan hanya untuk aplikasi resmi dari Google Play")
+                else -> Result.Error("Server terjemahan sedang bermasalah, coba lagi")
             }
-            .addOnFailureListener { callback(false) }
+        } catch (e: IOException) {
+            Result.Error("Tidak ada koneksi internet")
+        } catch (e: org.json.JSONException) {
+            Result.Error("Server terjemahan sedang bermasalah, coba lagi")
+        } finally {
+            connection.disconnect()
+        }
     }
 
     fun close() {
-        translators.values.forEach { it.close() }
-        translators.clear()
         identifier.close()
     }
 
-    companion object {
-        /** Downloads every language pack so translating later works offline. */
-        fun downloadAll(onDone: (Boolean) -> Unit) {
-            val manager = RemoteModelManager.getInstance()
-            val conditions = DownloadConditions.Builder().build()
-            val tasks = Language.entries.map {
-                manager.download(TranslateRemoteModel.Builder(it.code).build(), conditions)
-            }
-            com.google.android.gms.tasks.Tasks.whenAll(tasks)
-                .addOnSuccessListener { onDone(true) }
-                .addOnFailureListener { onDone(false) }
-        }
+    private companion object {
+        const val TIMEOUT_MS = 15_000
+
+        fun sha256Hex(input: String): String =
+            MessageDigest.getInstance("SHA-256").digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 }
