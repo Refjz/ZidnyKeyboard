@@ -1,6 +1,6 @@
 # ZidnyKeyboard translation server
 
-A Cloudflare Worker that translates text for the keyboard with Workers AI (`@cf/meta/m2m100-1.2b`).
+A Cloudflare Worker that translates text for the keyboard with Workers AI: the SEA-LION chat model (`@cf/aisingapore/gemma-sea-lion-v4-27b-it`), which understands casual Indonesian, with `@cf/meta/m2m100-1.2b` as a fallback.
 Every request must carry a Google Play Integrity token; the Worker asks Google to decode it and only
 answers when the app is the genuine Google Play install (`PLAY_RECOGNIZED`, `LICENSED`) on a device
 that meets device integrity, and the token was made for this exact text in the last 5 minutes.

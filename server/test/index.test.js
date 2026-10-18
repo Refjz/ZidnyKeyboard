@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import worker, { checkVerdict, requestHashInput, sha256Hex, validate, verifyIntegrity } from "../src/index.js";
+import worker, { checkVerdict, requestHashInput, sha256Hex, translationMessages, validate, verifyIntegrity } from "../src/index.js";
 
 const PACKAGE = "com.zidny.keyboard";
 const NOW = 1_800_000_000_000;
@@ -75,13 +75,29 @@ test("worker rejects requests without a genuine token and translates otherwise",
   const body = { text: "kamu di mana", source: "id", target: "en" };
   const request = (headers = {}) =>
     new Request("https://x/translate", { method: "POST", body: JSON.stringify(body), headers });
-  const ai = { run: async (model, input) => ({ translated_text: `[${input.target_lang}] ${input.text}` }) };
+  const ai = {
+    run: async (model, input) =>
+      model.includes("m2m100")
+        ? { translated_text: `[${input.target_lang}] ${input.text}` }
+        : { choices: [{ message: { content: ` [chat] ${input.messages[1].content} ` } }] },
+  };
 
   const strict = await worker.fetch(request(), { AI: ai, PACKAGE_NAME: PACKAGE, REQUIRE_INTEGRITY: "true" });
   assert.equal(strict.status, 403);
 
   const open = await worker.fetch(request(), { AI: ai, PACKAGE_NAME: PACKAGE, REQUIRE_INTEGRITY: "false" });
   assert.equal(open.status, 200);
-  assert.deepEqual(await open.json(), { text: "[en] kamu di mana" });
+  assert.deepEqual(await open.json(), { text: "[chat] kamu di mana" });
+
+  const failingChat = { run: async (model, input) => (model.includes("m2m100") ? ai.run(model, input) : { response: "" }) };
+  const fallback = await worker.fetch(request(), { AI: failingChat, PACKAGE_NAME: PACKAGE, REQUIRE_INTEGRITY: "false" });
+  assert.deepEqual(await fallback.json(), { text: "[en] kamu di mana" });
   assert.equal(requestHashInput("id", "en", "a|b"), "id|en|a|b");
+});
+
+test("translation prompt names both languages and passes the text through untouched", () => {
+  const [system, user] = translationMessages("cobain aja bro", "id", "en");
+  assert.match(system.content, /Indonesian/);
+  assert.match(system.content, /English/);
+  assert.equal(user.content, "cobain aja bro");
 });

@@ -7,7 +7,12 @@
 
 export const LANGUAGES = ["id", "en", "fr", "zh", "ja"];
 export const MAX_CHARS = 2000;
-const MODEL = "@cf/meta/m2m100-1.2b";
+// SEA-LION is tuned for Southeast Asian languages, so it understands casual Indonesian chat
+// ("cobain aja bro") that the plain translation model turns into nonsense. The translation
+// model stays as a fallback when the chat model fails.
+const CHAT_MODEL = "@cf/aisingapore/gemma-sea-lion-v4-27b-it";
+const FALLBACK_MODEL = "@cf/meta/m2m100-1.2b";
+export const LANGUAGE_NAMES = { id: "Indonesian", en: "English", fr: "French", zh: "Simplified Chinese", ja: "Japanese" };
 const TOKEN_MAX_AGE_MS = 5 * 60 * 1000;
 
 export default {
@@ -35,13 +40,44 @@ export default {
     }
 
     try {
-      const result = await env.AI.run(MODEL, { text, source_lang: source, target_lang: target });
+      return json({ text: await translateWithChatModel(env, text, source, target) });
+    } catch (e) {
+      console.log(`chat model failed: ${e.message}`);
+    }
+    try {
+      const result = await env.AI.run(FALLBACK_MODEL, { text, source_lang: source, target_lang: target });
       return json({ text: result.translated_text });
     } catch (e) {
       return json({ error: "translation_failed" }, 502);
     }
   },
 };
+
+export function translationMessages(text, source, target) {
+  const from = LANGUAGE_NAMES[source];
+  const to = LANGUAGE_NAMES[target];
+  return [
+    {
+      role: "system",
+      content:
+        `You translate chat messages typed on a phone keyboard. The message is most likely ${from}, ` +
+        `and may be casual, use slang, abbreviations or typos. Translate it into natural, everyday ${to} ` +
+        `that keeps the same meaning and tone. Reply with the translation only: no quotes, notes or explanations.`,
+    },
+    { role: "user", content: text },
+  ];
+}
+
+async function translateWithChatModel(env, text, source, target) {
+  const result = await env.AI.run(CHAT_MODEL, {
+    messages: translationMessages(text, source, target),
+    temperature: 0.2,
+    max_tokens: Math.min(4 * text.length + 64, 2048),
+  });
+  const output = (result?.choices?.[0]?.message?.content ?? result?.response ?? "").trim();
+  if (!output) throw new Error("empty response");
+  return output;
+}
 
 export function validate(body) {
   if (!body || typeof body !== "object") return "body must be a JSON object";
