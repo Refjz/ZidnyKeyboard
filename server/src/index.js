@@ -30,6 +30,7 @@ export default {
     if (env.REQUIRE_INTEGRITY !== "false") {
       const hash = await sha256Hex(requestHashInput(source, target, text));
       const verdict = await verifyIntegrity(env, request.headers.get("X-Integrity-Token"), hash);
+      if (!verdict.ok) console.log(`not_genuine: ${verdict.reason}`);
       if (!verdict.ok) return json({ error: "not_genuine", reason: verdict.reason }, 403);
     }
 
@@ -82,9 +83,13 @@ export async function verifyIntegrity(env, token, expectedHash, fetchImpl = fetc
         body: JSON.stringify({ integrity_token: token }),
       },
     );
-    if (!response.ok) return { ok: false, reason: `decode failed (${response.status})` };
+    if (!response.ok) {
+      console.log(`decode failed (${response.status}): ${await response.text()}`);
+      return { ok: false, reason: `decode failed (${response.status})` };
+    }
     payload = (await response.json()).tokenPayloadExternal;
   } catch (e) {
+    console.log(`decode failed: ${e.message}`);
     return { ok: false, reason: "decode failed" };
   }
   return checkVerdict(payload, env.PACKAGE_NAME, expectedHash, now);
@@ -107,7 +112,8 @@ let cachedAccessToken = null;
 /** An OAuth access token for the Play Integrity API, from the service account JSON key. */
 async function googleAccessToken(serviceAccountJson, fetchImpl, now) {
   if (cachedAccessToken && cachedAccessToken.expiresAt - 60_000 > now) return cachedAccessToken.value;
-  const account = JSON.parse(serviceAccountJson);
+  // Strip a byte-order mark: Windows shells add one when piping the key file into the secret.
+  const account = JSON.parse(serviceAccountJson.replace(/^﻿/, ""));
   const issuedAt = Math.floor(now / 1000);
   const claims = {
     iss: account.client_email,
@@ -122,7 +128,7 @@ async function googleAccessToken(serviceAccountJson, fetchImpl, now) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
   });
-  if (!response.ok) throw new Error(`token request failed (${response.status})`);
+  if (!response.ok) throw new Error(`token request failed (${response.status}): ${await response.text()}`);
   const data = await response.json();
   cachedAccessToken = { value: data.access_token, expiresAt: now + data.expires_in * 1000 };
   return data.access_token;
