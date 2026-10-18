@@ -44,6 +44,10 @@ class KeyboardView(
         fun clipboardItems(): List<String>
         fun onClipboardRemove(text: String)
         fun onClipboardClear()
+        /** The user tapped the chip for what they just copied, to paste it. */
+        fun onRecentClip()
+        /** The user long-pressed that chip to hide it. */
+        fun onRecentClipDismiss()
     }
 
     enum class ShiftState { OFF, ON, LOCKED }
@@ -116,6 +120,26 @@ class KeyboardView(
         visibility = GONE
         setOnClickListener { messagePanel.visibility = VISIBLE }
     }
+    /** What the user just copied (text or a picture), pasted with one tap. */
+    private val recentClipChip = TextView(context).apply {
+        gravity = Gravity.CENTER
+        setTextColor(theme.text)
+        textSize = 14f
+        maxLines = 1
+        maxWidth = dp(160)
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        setPadding(dp(10), 0, dp(10), 0)
+        background = rounded(theme.specialKey)
+        visibility = GONE
+        setOnClickListener {
+            tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+            listener.onRecentClip()
+        }
+        setOnLongClickListener {
+            listener.onRecentClipDismiss()
+            true
+        }
+    }
     private val suggestionViews = List(3) {
         TextView(context).apply {
             gravity = Gravity.CENTER
@@ -135,6 +159,7 @@ class KeyboardView(
     private val strip = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         addView(messageChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        addView(recentClipChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         suggestionViews.forEach { addView(it, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)) }
     }
 
@@ -240,6 +265,12 @@ class KeyboardView(
         suggestionViews.forEachIndexed { i, view -> view.text = words.getOrNull(i) ?: "" }
     }
 
+    /** Shows [label] as a one-tap paste chip next to the suggestions, or hides it when null. */
+    fun setRecentClip(label: String?) {
+        recentClipChip.text = label ?: ""
+        recentClipChip.visibility = if (label != null) VISIBLE else GONE
+    }
+
     fun setUndoVisible(visible: Boolean) {
         undoButton.visibility = if (visible) VISIBLE else GONE
     }
@@ -325,6 +356,28 @@ class KeyboardView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ViewCompat.requestApplyInsets(this)
+    }
+
+    override fun onDetachedFromWindow() {
+        stopKeyRepeat()
+        super.onDetachedFromWindow()
+    }
+
+    /**
+     * A key row can be rebuilt while a key is held (deleting to the start of a sentence turns on
+     * Shift), and the removed key then never sees its finger lift. Watching the whole gesture here
+     * makes sure a held Delete stops repeating as soon as the finger leaves the screen.
+     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val handled = super.dispatchTouchEvent(event)
+        val action = event.actionMasked
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) stopKeyRepeat()
+        return handled
+    }
+
+    /** Stops any held-key repeat and pending long-press, e.g. when the keyboard closes. */
+    fun stopKeyRepeat() {
+        keyHandler.removeCallbacksAndMessages(null)
     }
 
     /**
