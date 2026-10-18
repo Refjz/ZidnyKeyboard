@@ -1,6 +1,7 @@
 # ZidnyKeyboard translation server
 
-A Cloudflare Worker that translates text for the keyboard with Workers AI (`@cf/meta/m2m100-1.2b`).
+A Cloudflare Worker that translates text for the keyboard with Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`,
+which handles casual chat and slang, falling back to `@cf/meta/m2m100-1.2b`).
 Every request must carry a Google Play Integrity token; the Worker asks Google to decode it and only
 answers when the app is the genuine Google Play install (`PLAY_RECOGNIZED`, `LICENSED`) on a device
 that meets device integrity, and the token was made for this exact text in the last 5 minutes.
@@ -16,11 +17,11 @@ Languages: `id`, `en`, `fr`, `zh`, `ja`. Up to 2000 characters. Returns `{"text"
 1. **Cloudflare.** Create a free account at https://dash.cloudflare.com. Copy the *Account ID*
    (right side of the Workers & Pages page). Create an API token with the "Edit Cloudflare Workers"
    template, and also give it *Workers AI: Edit*.
-2. **Google Cloud.** In Play Console, open *Test and release → App integrity → Play Integrity API*
+2. **Google Cloud.** In Play Console, open *Test and release â†’ App integrity â†’ Play Integrity API*
    and link a Google Cloud project (create one if needed). In that project, enable the
-   *Google Play Integrity API*, then create a service account (*IAM → Service accounts*) and
+   *Google Play Integrity API*, then create a service account (*IAM â†’ Service accounts*) and
    download a JSON key for it. Note the project **number** (not ID) from the project dashboard.
-3. **GitHub repository secrets** (*Settings → Secrets and variables → Actions → Secrets*):
+3. **GitHub repository secrets** (*Settings â†’ Secrets and variables â†’ Actions â†’ Secrets*):
    `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `GOOGLE_SERVICE_ACCOUNT` (the whole JSON key).
 4. Run the *Deploy translation server* workflow (or push a change under `server/`). The log shows the
    Worker URL, like `https://zidny-translate.<your-subdomain>.workers.dev`.
