@@ -40,12 +40,17 @@ class KeyboardView(
         fun onCycleLanguage()
         /** The user picked [word] from the suggestion bar to replace the word being typed. */
         fun onSuggestion(word: String)
+        /** Texts copied earlier, newest first, for the 📋 panel. */
+        fun clipboardItems(): List<String>
+        fun onClipboardRemove(text: String)
+        fun onClipboardClear()
     }
 
     enum class ShiftState { OFF, ON, LOCKED }
 
     private var showSymbols = false
     private var showEmoji = false
+    private var showClipboard = false
     private var emojiCategory = 0
     private var lastShiftTap = 0L
     private val keyHandler = Handler(Looper.getMainLooper())
@@ -79,6 +84,11 @@ class KeyboardView(
         visibility = GONE
     }
     private val micButton = toolbarButton { listener.onVoice() }.apply { text = "🎤" }
+    private val clipboardButton = toolbarButton {
+        showClipboard = !showClipboard
+        showEmoji = false
+        render()
+    }.apply { text = "📋" }
     private val statusText = TextView(context).apply {
         setTextColor(theme.secondaryText)
         textSize = 13f
@@ -92,6 +102,7 @@ class KeyboardView(
         addView(languageButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(statusText, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         addView(undoButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        addView(clipboardButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(micButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(translateButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
     }
@@ -191,10 +202,16 @@ class KeyboardView(
         setBackgroundColor(theme.background)
         val pad = dp(4)
         setPadding(pad, pad, pad, pad)
-        // Android 15+ draws the keyboard behind the navigation bar, so lift the keys above it.
+        // Android 15+ draws the keyboard behind the navigation bar, so lift the keys above it, plus the
+        // user's own gap for phones whose hide/switch-keyboard buttons still cover the bottom row.
+        val bottomGap = dp(settings.bottomGap)
+        setPadding(pad, pad, pad, pad + bottomGap)
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            view.setPadding(pad, pad, pad, pad + bottom)
+            val bottom = maxOf(
+                insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
+                insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom,
+            )
+            view.setPadding(pad, pad, pad, pad + bottom + bottomGap)
             insets
         }
         addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -278,6 +295,11 @@ class KeyboardView(
         content.removeAllViews()
         content.addView(toolbar, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_DP)))
         content.addView(strip, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
+        (clipboardButton.background as GradientDrawable).setColor(if (showClipboard) theme.accent else theme.specialKey)
+        if (showClipboard) {
+            renderClipboard()
+            return
+        }
         if (showEmoji) {
             renderEmoji()
             return
@@ -289,6 +311,69 @@ class KeyboardView(
             for (key in keys) row.addView(createKey(key))
             content.addView(row, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, rowHeight))
         }
+    }
+
+    /** Recently copied texts: tap one to paste it, hold it to remove it. */
+    private fun renderClipboard() {
+        val rowHeight = dp(52 * settings.heightPercent / 100)
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(TextView(context).apply {
+                text = "Riwayat salinan · ketuk untuk tempel, tahan untuk hapus"
+                setTextColor(theme.secondaryText)
+                textSize = 12f
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(8), 0, dp(8), 0)
+            }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+            addView(toolbarButton {
+                listener.onClipboardClear()
+                render()
+            }.apply { text = "Hapus semua" }, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        }
+        content.addView(header, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+
+        val items = listener.clipboardItems()
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        if (items.isEmpty()) {
+            list.addView(TextView(context).apply {
+                text = "Belum ada teks yang disalin. Salin teks di aplikasi mana saja, nanti muncul di sini."
+                setTextColor(theme.secondaryText)
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(24), dp(16), dp(24))
+            })
+        }
+        items.forEach { item ->
+            list.addView(TextView(context).apply {
+                text = item
+                setTextColor(theme.text)
+                textSize = 15f
+                maxLines = 3
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = rounded(theme.key)
+                setOnClickListener {
+                    tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+                    listener.onText(item)
+                    showClipboard = false
+                    render()
+                }
+                setOnLongClickListener {
+                    listener.onClipboardRemove(item)
+                    render()
+                    true
+                }
+            }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).withMargins())
+        }
+        // Like the emoji panel, the list and bottom row take the height of the letter rows they replace.
+        val letterRows = KeyboardLayouts.letters(settings.layout, settings.numberRow).size
+        val listHeight = rowHeight * (letterRows - 1) - dp(40)
+        content.addView(ScrollView(context).apply { addView(list) },
+            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, listHeight.coerceAtLeast(dp(120))))
+
+        val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(Key.Letters, Key.Space, Key.Delete).forEach { bottom.addView(createKey(it)) }
+        content.addView(bottom, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, rowHeight))
     }
 
     private fun renderEmoji() {
@@ -546,7 +631,7 @@ class KeyboardView(
             Key.Right -> listener.onKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT)
             Key.Delete -> listener.onDelete()
             Key.Symbols -> { showSymbols = true; render() }
-            Key.Letters -> { showSymbols = false; showEmoji = false; render() }
+            Key.Letters -> { showSymbols = false; showEmoji = false; showClipboard = false; render() }
             Key.Emoji -> { showEmoji = true; render() }
             Key.Space -> listener.onText(" ")
             Key.Enter -> listener.onEnter()

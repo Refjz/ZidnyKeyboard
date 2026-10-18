@@ -1,10 +1,12 @@
 package com.zidny.keyboard
 
 import android.Manifest
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -35,8 +37,13 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private var lastClipText: String? = null
     private val clipboard by lazy { getSystemService(ClipboardManager::class.java) }
+    private val clipHistory by lazy { ClipboardHistory(File(filesDir, CLIPBOARD_FILE)) }
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
-        if (isInputViewShown) translateClipboard()
+        // Android only lets the keyboard read the clipboard while it is open.
+        if (isInputViewShown) {
+            rememberClip()
+            translateClipboard()
+        }
     }
 
     private var recognizer: SpeechRecognizer? = null
@@ -86,6 +93,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         lastCorrection = null
         updateAutoCaps()
         updateSuggestions()
+        rememberClip()
         translateClipboard()
     }
 
@@ -263,6 +271,28 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         view.setStatus("Terjemahan dibatalkan")
     }
 
+    /** Adds the text on the clipboard to the 📋 history, unless the copying app marked it as sensitive. */
+    private fun rememberClip() {
+        if (!settings.clipboardHistory) return
+        val clip = try {
+            clipboard?.primaryClip
+        } catch (e: SecurityException) {
+            null
+        } ?: return
+        if (clip.itemCount == 0) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            clip.description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
+        ) return
+        val text = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
+        clipHistory.add(text)
+    }
+
+    override fun clipboardItems(): List<String> = clipHistory.items
+
+    override fun onClipboardRemove(text: String) = clipHistory.remove(text)
+
+    override fun onClipboardClear() = clipHistory.clear()
+
     /** When the user copies a message in another language, show its Indonesian meaning above the keys. */
     private fun translateClipboard() {
         if (!settings.clipboardTranslate) return
@@ -278,7 +308,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         if ("://" in text || text.count { it.isLetter() } < 4 || ' ' !in text.trim()) return
         translator.translate(text, Language.INDONESIAN) { result ->
             if (result is TextTranslator.Result.Success) {
-                view.showMessage("📋", "Pesan yang kamu salin (${result.source.displayName}) artinya:", result.text)
+                view.showMessage("💬", "Pesan yang kamu salin (${result.source.displayName}) artinya:", result.text)
             }
         }
     }
@@ -419,6 +449,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     private companion object {
         const val MAX_CHARS = 5000
         const val MAX_CLIP_CHARS = 1000
+        const val CLIPBOARD_FILE = "clipboard_history.json"
         const val MAX_USER_WORDS = 3000
         const val WORD_LOOKBACK = 48
         const val WORD_SEPARATORS = " .,!?;:"

@@ -51,6 +51,8 @@ data class KeyboardSettings(
     val textSize: Int = 20,
     /** Space between neighbouring keys in dp. */
     val keyGap: Int = 6,
+    /** Extra space between the bottom row and the bottom of the screen in dp, above the navigation bar. */
+    val bottomGap: Int = 8,
     /** How long a key must be held before its extra characters appear, in ms. */
     val longPressMs: Int = 350,
     val vibrate: Boolean = true,
@@ -67,6 +69,8 @@ data class KeyboardSettings(
     val clipboardTranslate: Boolean = false,
     /** Show the translation first and only replace the text when the user taps "Pakai". */
     val translatePreview: Boolean = false,
+    /** Remember copied texts so they can be pasted again from the 📋 panel. */
+    val clipboardHistory: Boolean = true,
 ) {
     companion object {
         const val MIN_HEIGHT = 70
@@ -75,6 +79,8 @@ data class KeyboardSettings(
         const val MAX_TEXT = 28
         const val MIN_GAP = 0
         const val MAX_GAP = 12
+        const val MIN_BOTTOM_GAP = 0
+        const val MAX_BOTTOM_GAP = 48
         const val MIN_LONG_PRESS = 200
         const val MAX_LONG_PRESS = 800
 
@@ -89,6 +95,7 @@ data class KeyboardSettings(
                 heightPercent = p.getInt("height_percent", defaults.heightPercent).coerceIn(MIN_HEIGHT, MAX_HEIGHT),
                 textSize = p.getInt("text_size", defaults.textSize).coerceIn(MIN_TEXT, MAX_TEXT),
                 keyGap = p.getInt("key_gap", defaults.keyGap).coerceIn(MIN_GAP, MAX_GAP),
+                bottomGap = p.getInt("bottom_gap", defaults.bottomGap).coerceIn(MIN_BOTTOM_GAP, MAX_BOTTOM_GAP),
                 longPressMs = p.getInt("long_press_ms", defaults.longPressMs).coerceIn(MIN_LONG_PRESS, MAX_LONG_PRESS),
                 vibrate = p.getBoolean("vibrate", defaults.vibrate),
                 sound = p.getBoolean("sound", defaults.sound),
@@ -100,6 +107,7 @@ data class KeyboardSettings(
                 autocorrect = p.getBoolean("autocorrect", defaults.autocorrect),
                 clipboardTranslate = p.getBoolean("clipboard_translate", defaults.clipboardTranslate),
                 translatePreview = p.getBoolean("translate_preview", defaults.translatePreview),
+                clipboardHistory = p.getBoolean("clipboard_history", defaults.clipboardHistory),
             )
         }
 
@@ -110,6 +118,7 @@ data class KeyboardSettings(
                 .putInt("height_percent", settings.heightPercent)
                 .putInt("text_size", settings.textSize)
                 .putInt("key_gap", settings.keyGap)
+                .putInt("bottom_gap", settings.bottomGap)
                 .putInt("long_press_ms", settings.longPressMs)
                 .putBoolean("vibrate", settings.vibrate)
                 .putBoolean("sound", settings.sound)
@@ -121,6 +130,7 @@ data class KeyboardSettings(
                 .putBoolean("autocorrect", settings.autocorrect)
                 .putBoolean("clipboard_translate", settings.clipboardTranslate)
                 .putBoolean("translate_preview", settings.translatePreview)
+                .putBoolean("clipboard_history", settings.clipboardHistory)
                 .apply()
         }
     }
