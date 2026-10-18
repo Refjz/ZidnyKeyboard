@@ -29,6 +29,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     private var keyboardView: KeyboardView? = null
     private val translator by lazy { TextTranslator(this) }
     private lateinit var target: Language
+    private lateinit var style: TranslationStyle
     private var settings = KeyboardSettings()
 
     /** Loaded in the background when the service starts; null until then. */
@@ -70,6 +71,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onCreate() {
         super.onCreate()
         target = Language.loadTarget(this)
+        style = Language.loadStyle(this)
         settings = KeyboardSettings.load(this)
         clipboard?.addPrimaryClipChangedListener(clipListener)
         thread(name = "load-words") {
@@ -90,7 +92,8 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         settings = KeyboardSettings.load(this)
         return KeyboardView(this, this, settings).also {
             keyboardView = it
-            it.setTargetLanguage(target)
+            it.setTargetLanguage(target, style)
+            it.pickerHint = pickerHint()
             it.setStatus("Ketik, lalu tekan Terjemahkan")
         }
     }
@@ -108,6 +111,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
             else -> "⏎"
         }
         lastCorrection = null
+        restoreAppLanguage(info.packageName)
         updateAutoCaps()
         updateSuggestions()
         rememberClip()
@@ -216,12 +220,42 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         updateAutoCaps()
     }
 
-    override fun onCycleLanguage() {
-        target = target.next()
-        Language.saveTarget(this, target)
-        keyboardView?.setTargetLanguage(target)
-        keyboardView?.setStatus("Terjemahkan ke ${target.displayName}")
+    override fun onPickLanguage(language: Language) {
+        target = language
+        saveChoice()
+        keyboardView?.setStatus("Terjemahkan ke ${target.displayName} · ${style.displayName}")
     }
+
+    override fun onPickStyle(style: TranslationStyle) {
+        this.style = style
+        saveChoice()
+        keyboardView?.setStatus("Gaya bahasa: ${style.displayName}")
+    }
+
+    /** Remembers the language and style, for this app too when that setting is on, and shows them. */
+    private fun saveChoice() {
+        Language.saveTarget(this, target)
+        Language.saveStyle(this, style)
+        val app = currentInputEditorInfo?.packageName
+        if (settings.perAppLanguage && app != null) Language.saveForApp(this, app, target, style)
+        keyboardView?.setTargetLanguage(target, style)
+    }
+
+    /** Switches to the language and style last picked in [app], so e.g. WhatsApp and e-mail can differ. */
+    private fun restoreAppLanguage(app: String?) {
+        keyboardView?.pickerHint = pickerHint()
+        if (!settings.perAppLanguage || app == null) return
+        val (language, savedStyle) = Language.loadForApp(this, app) ?: return
+        if (language == target && savedStyle == style) return
+        target = language
+        style = savedStyle
+        keyboardView?.setTargetLanguage(target, style)
+        keyboardView?.setStatus("Terjemahkan ke ${target.displayName} · ${style.displayName}")
+    }
+
+    private fun pickerHint() =
+        if (settings.perAppLanguage) "Pilihan ini diingat untuk aplikasi ini. Kalimat yang sudah dalam bahasa tujuan akan dirapikan."
+        else "Kalimat yang sudah dalam bahasa tujuan akan dirapikan tata bahasanya."
 
     /** Translates everything in the text field and replaces it with the result. */
     override fun onTranslate() {
@@ -233,21 +267,29 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
             return
         }
         val goal = target
+        val options = TextTranslator.Options(style = style, explain = settings.showMeaning, polishSameLanguage = true)
         view.setTranslating(true)
         view.setStatus("Menerjemahkan ke ${goal.displayName}…")
-        translator.translate(original, goal) { result ->
+        translator.translate(original, goal, options) { result ->
             view.setTranslating(false)
             when (result) {
                 is TextTranslator.Result.Success -> {
-                    val label = "${result.source.displayName} → ${goal.displayName}"
+                    val label = if (result.polished) "${goal.displayName} dirapikan · ${options.style.displayName}"
+                    else "${result.source.displayName} → ${goal.displayName} · ${options.style.displayName}"
+                    val meaning = result.meaning
                     if (settings.translatePreview) {
                         view.setStatus(label)
-                        view.showMessage("🌐", "Hasil terjemahan ($label)", result.text, "Pakai") {
+                        val body = if (meaning != null) "${result.text}\n\nArtinya: $meaning" else result.text
+                        view.showMessage("🌐", "Hasil (${label})", body, "Pakai") {
                             view.hideMessagePanel()
                             replaceAll(ic, original, result.text, label)
                         }
                     } else {
-                        replaceAll(ic, original, result.text, label)
+                        if (replaceAll(ic, original, result.text, label) && meaning != null) {
+                            // The full meaning is one tap away on the 💡 chip or the status line.
+                            view.setStatus("Artinya: $meaning")
+                            view.showMessage("💡", "Artinya dalam bahasa Indonesia", meaning, open = false)
+                        }
                     }
                 }
                 is TextTranslator.Result.AlreadyInTarget ->
@@ -257,12 +299,14 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
-    /** Replaces the whole field, but only if it still holds [original]. */
-    private fun replaceAll(ic: android.view.inputmethod.InputConnection, original: String, replacement: String, label: String) {
-        val view = keyboardView ?: return
+    /** Replaces the whole field, but only if it still holds [original]. Returns whether it did. */
+    private fun replaceAll(
+        ic: android.view.inputmethod.InputConnection, original: String, replacement: String, label: String,
+    ): Boolean {
+        val view = keyboardView ?: return false
         if (currentInputConnection !== ic || currentText() != original) {
             view.setStatus("Teks berubah, coba lagi")
-            return
+            return false
         }
         ic.beginBatchEdit()
         ic.setSelection(0, original.length)
@@ -271,6 +315,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         lastTranslation = Pair(original, replacement)
         view.setUndoVisible(true)
         view.setStatus(label)
+        return true
     }
 
     override fun onUndoTranslate() {
@@ -424,8 +469,17 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         // Links, numbers and codes are copied all the time and need no translation.
         if ("://" in text || text.count { it.isLetter() } < 4 || ' ' !in text.trim()) return
         translator.translate(text, Language.INDONESIAN) { result ->
-            if (result is TextTranslator.Result.Success) {
-                view.showMessage("💬", "Pesan yang kamu salin (${result.source.displayName}) artinya:", result.text)
+            if (result !is TextTranslator.Result.Success) return@translate
+            val title = "Pesan yang kamu salin (${result.source.displayName}) artinya:"
+            if (result.source == target) {
+                view.showMessage("💬", title, result.text)
+                return@translate
+            }
+            // One tap switches the keyboard to the sender's language, ready to type the reply in Indonesian.
+            view.showMessage("💬", title, result.text, "Balas pakai ${result.source.displayName}") {
+                view.hideMessagePanel()
+                onPickLanguage(result.source)
+                view.setStatus("Ketik balasanmu, lalu tekan Terjemahkan")
             }
         }
     }

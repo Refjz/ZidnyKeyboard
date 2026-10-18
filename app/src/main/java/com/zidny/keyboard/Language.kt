@@ -10,11 +10,11 @@ enum class Language(val code: String, val label: String, val displayName: String
     CHINESE("zh", "ZH", "Mandarin"),
     JAPANESE("ja", "JA", "Jepang");
 
-    fun next(): Language = entries[(ordinal + 1) % entries.size]
-
     companion object {
         private const val PREFS = "settings"
         private const val KEY_TARGET = "target_language"
+        private const val KEY_STYLE = "translation_style"
+        private const val APP_PREFS = "app_languages"
 
         fun fromCode(code: String?): Language? = entries.firstOrNull { it.code == code }
 
@@ -26,6 +26,34 @@ enum class Language(val code: String, val label: String, val displayName: String
         fun saveTarget(context: Context, language: Language) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putString(KEY_TARGET, language.name).apply()
+        }
+
+        fun loadStyle(context: Context): TranslationStyle {
+            val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_STYLE, null)
+            return TranslationStyle.entries.firstOrNull { it.name == saved } ?: TranslationStyle.CASUAL
+        }
+
+        fun saveStyle(context: Context, style: TranslationStyle) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(KEY_STYLE, style.name).apply()
+        }
+
+        /** The language and style last used in the app [packageName], or null if none was picked there yet. */
+        fun loadForApp(context: Context, packageName: String): Pair<Language, TranslationStyle>? {
+            val saved = context.getSharedPreferences(APP_PREFS, Context.MODE_PRIVATE).getString(packageName, null)
+            return parseAppChoice(saved)
+        }
+
+        fun saveForApp(context: Context, packageName: String, language: Language, style: TranslationStyle) {
+            context.getSharedPreferences(APP_PREFS, Context.MODE_PRIVATE)
+                .edit().putString(packageName, "${language.name}|${style.name}").apply()
+        }
+
+        fun parseAppChoice(saved: String?): Pair<Language, TranslationStyle>? {
+            val parts = saved?.split('|') ?: return null
+            val language = entries.firstOrNull { it.name == parts[0] } ?: return null
+            val style = TranslationStyle.entries.firstOrNull { it.name == parts.getOrNull(1) } ?: TranslationStyle.CASUAL
+            return language to style
         }
     }
 }
