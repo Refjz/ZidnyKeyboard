@@ -158,6 +158,8 @@ class MainActivity : AppCompatActivity() {
             settings.textSize, "") { update(settings.copy(textSize = it)) }
         addSlider(root, R.string.key_gap, KeyboardSettings.MIN_GAP, KeyboardSettings.MAX_GAP, 1,
             settings.keyGap, " dp") { update(settings.copy(keyGap = it)) }
+        addSlider(root, R.string.bottom_gap, KeyboardSettings.MIN_BOTTOM_GAP, KeyboardSettings.MAX_BOTTOM_GAP, 2,
+            settings.bottomGap, " dp") { update(settings.copy(bottomGap = it)) }
         addSlider(root, R.string.long_press, KeyboardSettings.MIN_LONG_PRESS, KeyboardSettings.MAX_LONG_PRESS, 50,
             settings.longPressMs, " ms") { update(settings.copy(longPressMs = it)) }
 
@@ -171,6 +173,9 @@ class MainActivity : AppCompatActivity() {
         }
         addSwitch(root, R.string.suggestions, settings.suggestions) { update(settings.copy(suggestions = it)) }
         addSwitch(root, R.string.autocorrect, settings.autocorrect) { update(settings.copy(autocorrect = it)) }
+        addSwitch(root, R.string.clipboard_history, settings.clipboardHistory) {
+            update(settings.copy(clipboardHistory = it))
+        }
         addSwitch(root, R.string.clipboard_translate, settings.clipboardTranslate) {
             update(settings.copy(clipboardTranslate = it))
         }

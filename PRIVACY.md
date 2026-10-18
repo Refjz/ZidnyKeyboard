@@ -20,6 +20,8 @@ ZidnyKeyboard adalah aplikasi keyboard Android yang bisa menerjemahkan teks yang
 
 **Teks yang disalin (clipboard).** Jika fitur "Terjemahkan pesan yang disalin" aktif, saat keyboard terbuka aplikasi membaca teks yang baru Anda salin lalu mengirimnya ke server terjemahan yang sama untuk diterjemahkan ke bahasa Indonesia. Teks tersebut tidak disimpan. Fitur ini mati secara bawaan dan bisa diatur di pengaturan.
 
+**Riwayat salinan.** Agar Anda bisa menempel lagi teks yang pernah disalin lewat tombol 📋, saat keyboard terbuka aplikasi menyimpan hingga 20 teks terakhir yang Anda salin di penyimpanan lokal aplikasi. Riwayat ini tidak pernah dikirim ke mana pun, tidak menyimpan teks yang ditandai sensitif oleh aplikasi asalnya (misalnya kata sandi dari pengelola sandi), bisa dihapus per item atau semuanya dari panel 📋, dan bisa dimatikan di pengaturan.
+
 **Suara.** Jika Anda menekan tombol mikrofon, suara Anda diproses oleh layanan pengenal suara bawaan HP (biasanya milik Google) untuk diubah menjadi teks. Layanan tersebut bisa memproses suara secara online sesuai kebijakan privasi penyedianya. ZidnyKeyboard sendiri tidak merekam atau menyimpan suara Anda.
 
 **Pengaturan.** Pilihan tema, tinggi tombol, ukuran huruf, getar, baris angka, dan bahasa tujuan disimpan di penyimpanan lokal aplikasi di HP Anda. Data ini terhapus jika aplikasi dihapus.
@@ -66,6 +68,7 @@ ZidnyKeyboard is an Android keyboard that can translate the text you type.
 - Your settings (theme, size, target language) are stored only on your device and are deleted when you uninstall the app.
 - Google ML Kit may send limited usage and diagnostic data (not your typed text) to Google; see https://developers.google.com/ml-kit/terms and https://policies.google.com/privacy
 - Words you type often are counted on your device so they can be suggested again; this list never leaves the device and is not kept for password, e-mail or web address fields.
+- The 📋 clipboard panel keeps up to 20 recently copied texts on the device only (never sent anywhere, skipping texts marked sensitive). It can be cleared from the panel or turned off in the settings.
 - If "translate copied messages" is on (it is off by default), text you copy is read while the keyboard is open and sent to the same translation server. It is not stored.
 - The microphone is used only when you tap the mic button; speech is converted to text by your phone's speech recognition service (usually Google), which may process it online under its own privacy policy.
 - Permissions: Internet (translation server and ads) and microphone (for voice typing).
