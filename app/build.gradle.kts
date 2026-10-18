@@ -51,7 +51,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 shrinks the app; the bundle carries its mapping file so Play can read crash reports.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Ship symbols for the native libraries (ML Kit) inside the bundle for readable native crashes.
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
             if (keystorePath != null) signingConfig = signingConfigs.getByName("upload")
         }
     }
