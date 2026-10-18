@@ -175,6 +175,9 @@ class KeyboardView(
     /** The toolbar and key rows. */
     private val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
 
+    /** Key rows (and panels) with the height they ask for; shrunk in [onMeasure] when the screen has no room. */
+    private val shrinkable = mutableListOf<Pair<View, Int>>()
+
     /** Drawn above the keys: the enlarged letter while pressing, and the row of extra characters while holding. */
     private val overlay = FrameLayout(context)
     private val preview = TextView(context).apply {
@@ -293,6 +296,7 @@ class KeyboardView(
 
     private fun render() {
         content.removeAllViews()
+        shrinkable.clear()
         content.addView(toolbar, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_DP)))
         content.addView(strip, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
         (clipboardButton.background as GradientDrawable).setColor(if (showClipboard) theme.accent else theme.specialKey)
@@ -309,8 +313,39 @@ class KeyboardView(
         for (keys in layout) {
             val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
             for (key in keys) row.addView(createKey(key))
-            content.addView(row, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, rowHeight))
+            addShrinkable(row, rowHeight)
         }
+    }
+
+    private fun addShrinkable(view: View, height: Int) {
+        content.addView(view, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, height))
+        shrinkable.add(view to height)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        ViewCompat.requestApplyInsets(this)
+    }
+
+    /**
+     * Always asks for exactly the height the toolbar, keys and bottom gap need, so the window grows with
+     * the settings. If the system offers less room than that, the key rows shrink to fit instead of the
+     * bottom row being cut off.
+     */
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        shrinkable.forEach { (view, height) -> view.layoutParams.height = height }
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        val needed = measuredHeight
+        val limit = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) needed
+        else MeasureSpec.getSize(heightMeasureSpec)
+        val excess = needed - limit
+        val total = shrinkable.sumOf { it.second }
+        if (excess > 0 && total > 0) {
+            shrinkable.forEach { (view, height) ->
+                view.layoutParams.height = (height - excess.toLong() * height / total).toInt().coerceAtLeast(dp(24))
+            }
+        }
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(minOf(needed, limit), MeasureSpec.EXACTLY))
     }
 
     /** Recently copied texts: tap one to paste it, hold it to remove it. */
@@ -368,12 +403,11 @@ class KeyboardView(
         // Like the emoji panel, the list and bottom row take the height of the letter rows they replace.
         val letterRows = KeyboardLayouts.letters(settings.layout, settings.numberRow).size
         val listHeight = rowHeight * (letterRows - 1) - dp(40)
-        content.addView(ScrollView(context).apply { addView(list) },
-            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, listHeight.coerceAtLeast(dp(120))))
+        addShrinkable(ScrollView(context).apply { addView(list) }, listHeight.coerceAtLeast(dp(120)))
 
         val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         listOf(Key.Letters, Key.Space, Key.Delete).forEach { bottom.addView(createKey(it)) }
-        content.addView(bottom, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, rowHeight))
+        addShrinkable(bottom, rowHeight)
     }
 
     private fun renderEmoji() {
@@ -413,12 +447,11 @@ class KeyboardView(
         // The tabs, grid and bottom row together take the height of the letter rows they replace.
         val letterRows = KeyboardLayouts.letters(settings.layout, settings.numberRow).size
         val gridHeight = rowHeight * (letterRows - 1) - dp(40)
-        content.addView(ScrollView(context).apply { addView(grid) },
-            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, gridHeight.coerceAtLeast(dp(120))))
+        addShrinkable(ScrollView(context).apply { addView(grid) }, gridHeight.coerceAtLeast(dp(120)))
 
         val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         listOf(Key.Letters, Key.Space, Key.Delete).forEach { bottom.addView(createKey(it)) }
-        content.addView(bottom, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, rowHeight))
+        addShrinkable(bottom, rowHeight)
     }
 
     private fun isSpecial(key: Key) = key !is Key.Char || key.value in listOf(",", ".")
