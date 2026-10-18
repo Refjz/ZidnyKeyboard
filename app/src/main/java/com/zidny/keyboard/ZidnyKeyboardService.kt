@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
 import android.os.Build
@@ -15,6 +16,10 @@ import android.text.InputType
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import androidx.core.content.FileProvider
+import androidx.core.view.inputmethod.EditorInfoCompat
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -42,9 +47,21 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         // Android only lets the keyboard read the clipboard while it is open.
         if (isInputViewShown) {
             rememberClip()
+            offerRecentClip()
             translateClipboard()
         }
     }
+
+    /** Something the user just copied, offered as a one-tap paste above the keys. */
+    private sealed class RecentClip(val key: String) {
+        class Text(val text: String) : RecentClip("text:$text")
+        class Image(val uri: Uri, val mimeType: String) : RecentClip("image:$uri")
+    }
+
+    private var recentClip: RecentClip? = null
+
+    /** Clips already pasted or dismissed from the chip, so they aren't offered again. */
+    private var spentClipKey: String? = null
 
     private var recognizer: SpeechRecognizer? = null
 
@@ -94,12 +111,14 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         updateAutoCaps()
         updateSuggestions()
         rememberClip()
+        offerRecentClip()
         translateClipboard()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         recognizer?.cancel()
+        keyboardView?.stopKeyRepeat()
         keyboardView?.setListening(false)
         keyboardView?.clearMessage()
         saveUserWords()
@@ -293,6 +312,104 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onClipboardClear() = clipHistory.clear()
 
+    /** Offers the clipboard as a chip above the keys if it was copied in the last few minutes. */
+    private fun offerRecentClip() {
+        val view = keyboardView ?: return
+        recentClip = findRecentClip()?.takeIf { it.key != spentClipKey }
+        view.setRecentClip(
+            when (val clip = recentClip) {
+                is RecentClip.Text -> "📋 " + clip.text.replace(Regex("\\s+"), " ").trim()
+                is RecentClip.Image -> "🖼️ Gambar"
+                null -> null
+            },
+        )
+    }
+
+    private fun findRecentClip(): RecentClip? {
+        if (!settings.clipboardHistory) return null
+        val clip = try {
+            clipboard?.primaryClip
+        } catch (e: SecurityException) {
+            null
+        } ?: return null
+        if (clip.itemCount == 0) return null
+        val description = clip.description
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
+        ) return null
+        // Older Android doesn't say when the clip was copied; there it stays offered until used or dismissed.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            System.currentTimeMillis() - description.timestamp > RECENT_CLIP_MS
+        ) return null
+        val item = clip.getItemAt(0)
+        val imageType = (0 until description.mimeTypeCount).map { description.getMimeType(it) }
+            .firstOrNull { it.startsWith("image/") }
+        if (item.uri != null && imageType != null) return RecentClip.Image(item.uri, imageType)
+        val text = item.coerceToText(this)?.toString()?.takeIf { it.isNotBlank() } ?: return null
+        return RecentClip.Text(text)
+    }
+
+    override fun onRecentClip() {
+        val clip = recentClip ?: return
+        when (clip) {
+            is RecentClip.Text -> currentInputConnection?.commitText(clip.text, 1)
+            is RecentClip.Image -> pasteImage(clip)
+        }
+        onRecentClipDismiss()
+    }
+
+    override fun onRecentClipDismiss() {
+        spentClipKey = recentClip?.key
+        recentClip = null
+        keyboardView?.setRecentClip(null)
+    }
+
+    /**
+     * Sends a copied picture to the app being typed in. The picture is copied into the keyboard's own
+     * storage first, because the app that copied it only let the keyboard (not other apps) read it.
+     */
+    private fun pasteImage(clip: RecentClip.Image) {
+        val editor = currentInputEditorInfo ?: return
+        val accepted = EditorInfoCompat.getContentMimeTypes(editor)
+        if (accepted.none { ClipDescription.compareMimeTypes(clip.mimeType, it) }) {
+            keyboardView?.setStatus("Aplikasi ini tidak bisa menerima gambar dari keyboard")
+            return
+        }
+        thread(name = "paste-image") {
+            val uri = try {
+                copyToSharedFile(clip)
+            } catch (e: Exception) {
+                null
+            }
+            keyboardView?.post {
+                if (uri == null) {
+                    keyboardView?.setStatus("Gambar tidak bisa dibaca")
+                    return@post
+                }
+                val ic = currentInputConnection ?: return@post
+                val content = InputContentInfoCompat(uri, ClipDescription("Gambar", arrayOf(clip.mimeType)), null)
+                val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+                    InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
+                } else {
+                    grantUriPermission(editor.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    0
+                }
+                if (!InputConnectionCompat.commitContent(ic, editor, content, flags, null)) {
+                    keyboardView?.setStatus("Aplikasi ini tidak bisa menerima gambar dari keyboard")
+                }
+            }
+        }
+    }
+
+    private fun copyToSharedFile(clip: RecentClip.Image): Uri {
+        val dir = File(cacheDir, PASTED_IMAGES_DIR).apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val extension = clip.mimeType.substringAfter('/').substringBefore('+').ifEmpty { "png" }
+        val file = File(dir, "gambar_${System.currentTimeMillis()}.$extension")
+        contentResolver.openInputStream(clip.uri)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
+        return FileProvider.getUriForFile(this, "$packageName.files", file)
+    }
+
     /** When the user copies a message in another language, show its Indonesian meaning above the keys. */
     private fun translateClipboard() {
         if (!settings.clipboardTranslate) return
@@ -450,6 +567,8 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         const val MAX_CHARS = 5000
         const val MAX_CLIP_CHARS = 1000
         const val CLIPBOARD_FILE = "clipboard_history.json"
+        const val PASTED_IMAGES_DIR = "pasted"
+        const val RECENT_CLIP_MS = 3 * 60 * 1000L
         const val MAX_USER_WORDS = 3000
         const val WORD_LOOKBACK = 48
         const val WORD_SEPARATORS = " .,!?;:"
