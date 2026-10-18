@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import worker, { checkVerdict, requestHashInput, sha256Hex, validate, verifyIntegrity } from "../src/index.js";
+import worker, { checkVerdict, requestHashInput, sha256Hex, translate, translationPrompt, validate, verifyIntegrity } from "../src/index.js";
 
 const PACKAGE = "com.zidny.keyboard";
 const NOW = 1_800_000_000_000;
@@ -84,4 +84,18 @@ test("worker rejects requests without a genuine token and translates otherwise",
   assert.equal(open.status, 200);
   assert.deepEqual(await open.json(), { text: "[en] kamu di mana" });
   assert.equal(requestHashInput("id", "en", "a|b"), "id|en|a|b");
+});
+
+test("translate uses the chat model and falls back to m2m100 when it fails", async () => {
+  const chat = { run: async (model, input) => (input.messages ? { response: " just try it bro \n" } : { translated_text: "x" }) };
+  assert.equal(await translate(chat, "cobain aja bro", "id", "en"), "just try it bro");
+
+  const broken = {
+    run: async (model, input) => {
+      if (input.messages) throw new Error("model down");
+      return { translated_text: `[${input.target_lang}] ${input.text}` };
+    },
+  };
+  assert.equal(await translate(broken, "halo", "id", "en"), "[en] halo");
+  assert.match(translationPrompt("id", "ja"), /from Indonesian to Japanese/);
 });
