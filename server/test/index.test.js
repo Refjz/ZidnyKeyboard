@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import worker, { checkVerdict, requestHashInput, sha256Hex, translate, translationPrompt, validate, verifyIntegrity } from "../src/index.js";
+import worker, { checkVerdict, polish, polishPrompt, requestHashInput, sha256Hex, translate, translationPrompt, validate, verifyIntegrity } from "../src/index.js";
 
 const PACKAGE = "com.zidny.keyboard";
 const NOW = 1_800_000_000_000;
@@ -21,6 +21,23 @@ test("validate accepts a normal request and rejects bad ones", () => {
   assert.ok(validate({ text: "halo", source: "id", target: "de" }));
   assert.ok(validate({ text: "halo", source: "id", target: "id" }));
   assert.ok(validate({ text: "x".repeat(2001), source: "id", target: "en" }));
+});
+
+test("validate checks style, mode and explain", () => {
+  assert.equal(validate({ text: "halo", source: "id", target: "en", style: "formal", mode: "translate", explain: true }), null);
+  assert.equal(validate({ text: "i has a cat", source: "en", target: "en", mode: "polish" }), null);
+  assert.ok(validate({ text: "halo", source: "id", target: "en", style: "rude" }));
+  assert.ok(validate({ text: "halo", source: "id", target: "en", mode: "summarize" }));
+  assert.ok(validate({ text: "halo", source: "id", target: "en", mode: "polish" }));
+  assert.ok(validate({ text: "halo", source: "id", target: "en", explain: "yes" }));
+});
+
+test("requestHashInput keeps the old format for old apps and binds every option for new ones", () => {
+  assert.equal(requestHashInput({ text: "a|b", source: "id", target: "en" }), "id|en|a|b");
+  assert.equal(
+    requestHashInput({ text: "hi", source: "en", target: "en", style: "polite", mode: "polish", explain: true }),
+    "v2|en|en|polite|polish|true|hi",
+  );
 });
 
 test("sha256Hex matches the known digest", async () => {
@@ -83,7 +100,32 @@ test("worker rejects requests without a genuine token and translates otherwise",
   const open = await worker.fetch(request(), { AI: ai, PACKAGE_NAME: PACKAGE, REQUIRE_INTEGRITY: "false" });
   assert.equal(open.status, 200);
   assert.deepEqual(await open.json(), { text: "[en] kamu di mana" });
-  assert.equal(requestHashInput("id", "en", "a|b"), "id|en|a|b");
+});
+
+test("worker adds the Indonesian meaning when asked, and polishes in the same language", async () => {
+  const seen = [];
+  const ai = {
+    run: async (model, input) => {
+      seen.push(input.messages[0].content);
+      return { response: input.messages[0].content.includes("to Indonesian") ? "arti" : "result" };
+    },
+  };
+  const env = { AI: ai, PACKAGE_NAME: PACKAGE, REQUIRE_INTEGRITY: "false" };
+  const post = (body) => worker.fetch(new Request("https://x/translate", { method: "POST", body: JSON.stringify(body) }), env);
+
+  const explained = await post({ text: "halo", source: "id", target: "en", style: "formal", mode: "translate", explain: true });
+  assert.deepEqual(await explained.json(), { text: "result", meaning: "arti" });
+  assert.match(seen[0], /formal, professional/);
+
+  const polished = await post({ text: "i has cat", source: "en", target: "en", style: "casual", mode: "polish", explain: false });
+  assert.deepEqual(await polished.json(), { text: "result" });
+  assert.match(seen.at(-1), /You fix chat messages written in English/);
+
+  // Into Indonesian there is nothing to explain.
+  seen.length = 0;
+  const intoIndonesian = await post({ text: "hello", source: "en", target: "id", style: "casual", mode: "translate", explain: true });
+  assert.deepEqual(await intoIndonesian.json(), { text: "arti" });
+  assert.equal(seen.length, 1);
 });
 
 test("translate uses the chat model and falls back to m2m100 when it fails", async () => {
@@ -98,4 +140,12 @@ test("translate uses the chat model and falls back to m2m100 when it fails", asy
   };
   assert.equal(await translate(broken, "halo", "id", "en"), "[en] halo");
   assert.match(translationPrompt("id", "ja"), /from Indonesian to Japanese/);
+  assert.match(translationPrompt("id", "en"), /Javanese, Sundanese/);
+  assert.match(translationPrompt("en", "id", "polite"), /politely/);
+});
+
+test("polish has no fallback model", async () => {
+  const broken = { run: async () => ({ response: "" }) };
+  await assert.rejects(polish(broken, "i has cat", "en"));
+  assert.match(polishPrompt("ja", "formal"), /Japanese/);
 });

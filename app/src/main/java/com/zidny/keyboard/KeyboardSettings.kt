@@ -71,6 +71,10 @@ data class KeyboardSettings(
     val translatePreview: Boolean = false,
     /** Remember copied texts so they can be pasted again from the 📋 panel. */
     val clipboardHistory: Boolean = true,
+    /** After translating, also show what the result means in Indonesian. */
+    val showMeaning: Boolean = true,
+    /** Remember the target language and style separately for each app (e.g. Japanese in WhatsApp, formal English in e-mail). */
+    val perAppLanguage: Boolean = true,
 ) {
     companion object {
         const val MIN_HEIGHT = 70
@@ -108,6 +112,8 @@ data class KeyboardSettings(
                 clipboardTranslate = p.getBoolean("clipboard_translate", defaults.clipboardTranslate),
                 translatePreview = p.getBoolean("translate_preview", defaults.translatePreview),
                 clipboardHistory = p.getBoolean("clipboard_history", defaults.clipboardHistory),
+                showMeaning = p.getBoolean("show_meaning", defaults.showMeaning),
+                perAppLanguage = p.getBoolean("per_app_language", defaults.perAppLanguage),
             )
         }
 
@@ -131,6 +137,8 @@ data class KeyboardSettings(
                 .putBoolean("clipboard_translate", settings.clipboardTranslate)
                 .putBoolean("translate_preview", settings.translatePreview)
                 .putBoolean("clipboard_history", settings.clipboardHistory)
+                .putBoolean("show_meaning", settings.showMeaning)
+                .putBoolean("per_app_language", settings.perAppLanguage)
                 .apply()
         }
     }

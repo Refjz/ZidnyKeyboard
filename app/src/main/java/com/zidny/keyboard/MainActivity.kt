@@ -182,6 +182,10 @@ class MainActivity : AppCompatActivity() {
         addSwitch(root, R.string.translate_preview, settings.translatePreview) {
             update(settings.copy(translatePreview = it))
         }
+        addSwitch(root, R.string.show_meaning, settings.showMeaning) { update(settings.copy(showMeaning = it)) }
+        addSwitch(root, R.string.per_app_language, settings.perAppLanguage) {
+            update(settings.copy(perAppLanguage = it))
+        }
     }
 
     private fun addSwitch(root: LinearLayout, labelRes: Int, value: Boolean, onChange: (Boolean) -> Unit) {

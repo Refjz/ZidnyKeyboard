@@ -19,4 +19,20 @@ class SlangNormalizerTest {
     fun leavesFormalTextAlone() {
         assertEquals("Saya sedang makan siang.", SlangNormalizer.normalize("Saya sedang makan siang."))
     }
+
+    @Test
+    fun understandsJavaneseMixedIn() {
+        assertEquals("bagaimana kabarnya bro, sudah makan?", SlangNormalizer.normalize("piye kabare bro, wis mangan?"))
+    }
+
+    @Test
+    fun understandsSundaneseMixedIn() {
+        assertEquals("Bagaimana, sehat? Saya ingin ke sana sekarang", SlangNormalizer.normalize("Kumaha, damang? Abdi hayang ke ditu ayeuna"))
+    }
+
+    @Test
+    fun replacesPhrasesBeforeWords() {
+        assertEquals("Terima kasih, tidak apa-apa", SlangNormalizer.normalize("Matur nuwun, ora popo"))
+        assertEquals("terima kasih pisangnya", SlangNormalizer.normalize("hatur nuhun pisangnya"))
+    }
 }

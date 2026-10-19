@@ -19,7 +19,13 @@ import kotlin.concurrent.thread
 class TextTranslator(context: Context) {
 
     sealed class Result {
-        data class Success(val text: String, val source: Language) : Result()
+        /** [meaning] is the result in Indonesian, when asked for; [polished] means the text was fixed rather than translated. */
+        data class Success(
+            val text: String,
+            val source: Language,
+            val meaning: String? = null,
+            val polished: Boolean = false,
+        ) : Result()
         data class AlreadyInTarget(val language: Language) : Result()
         data class Error(val message: String) : Result()
     }
@@ -28,43 +34,66 @@ class TextTranslator(context: Context) {
     private val integrity = IntegrityChecker(context)
     private val main = Handler(Looper.getMainLooper())
 
+    /** What to ask the server for, besides the text and languages. */
+    data class Options(
+        val style: TranslationStyle = TranslationStyle.CASUAL,
+        /** Also return the result's meaning in Indonesian. */
+        val explain: Boolean = false,
+        /** If the text is already in the target language, fix its grammar instead of giving up. */
+        val polishSameLanguage: Boolean = false,
+    )
+
     /** Translates [text] into [target] and calls [onResult] on the main thread. */
-    fun translate(text: String, target: Language, onResult: (Result) -> Unit) {
+    fun translate(text: String, target: Language, options: Options = Options(), onResult: (Result) -> Unit) {
         identifier.identifyLanguage(text)
             .addOnSuccessListener { tag ->
-                // Casual Indonesian is often detected as Malay or not at all, so treat both as Indonesian
-                // (unless translating into Indonesian, where unknown text is most likely English).
-                val source = when {
-                    tag == "ms" -> Language.INDONESIAN
+                // Casual Indonesian is often detected as Malay, Javanese, Sundanese or not at all, so treat
+                // those as Indonesian (unless translating into Indonesian, where unknown text is most likely English).
+                val source = when (tag) {
+                    in INDONESIAN_LOOKALIKES -> Language.INDONESIAN
                     else -> Language.fromCode(tag)
                         ?: if (target == Language.INDONESIAN) Language.ENGLISH else Language.INDONESIAN
                 }
-                if (source == target) {
+                if (source == target && !options.polishSameLanguage) {
                     onResult(Result.AlreadyInTarget(target))
                     return@addOnSuccessListener
                 }
-                val input = if (source == Language.INDONESIAN) SlangNormalizer.normalize(text) else text
-                translateOnServer(source, input, target, onResult)
+                val polish = source == target
+                // Polishing keeps the user's own words, so slang is only normalised before translating.
+                val input = if (source == Language.INDONESIAN && !polish) SlangNormalizer.normalize(text) else text
+                translateOnServer(Request(input, source, target, options.style, polish, options.explain), onResult)
             }
             .addOnFailureListener { onResult(Result.Error("Gagal mengenali bahasa")) }
     }
 
-    private fun translateOnServer(source: Language, text: String, target: Language, onResult: (Result) -> Unit) {
+    private data class Request(
+        val text: String,
+        val source: Language,
+        val target: Language,
+        val style: TranslationStyle,
+        val polish: Boolean,
+        val explain: Boolean,
+    ) {
+        val mode get() = if (polish) "polish" else "translate"
+
+        /** Must match requestHashInput() in server/src/index.js. */
+        val hashInput get() = "v2|${source.code}|${target.code}|${style.code}|$mode|$explain|$text"
+    }
+
+    private fun translateOnServer(request: Request, onResult: (Result) -> Unit) {
         if (BuildConfig.TRANSLATE_URL.isEmpty()) {
             onResult(Result.Error("Server terjemahan belum diatur"))
             return
         }
-        // Must match requestHashInput() in server/src/index.js.
-        val requestHash = sha256Hex("${source.code}|${target.code}|$text")
-        integrity.token(requestHash) { token ->
+        integrity.token(sha256Hex(request.hashInput)) { token ->
             thread(name = "translate") {
-                val result = post(source, text, target, token)
+                val result = post(request, token)
                 main.post { onResult(result) }
             }
         }
     }
 
-    private fun post(source: Language, text: String, target: Language, token: String?): Result {
+    private fun post(request: Request, token: String?): Result {
         val connection = URL(BuildConfig.TRANSLATE_URL.trimEnd('/') + "/translate").openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "POST"
@@ -73,12 +102,19 @@ class TextTranslator(context: Context) {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             if (token != null) connection.setRequestProperty("X-Integrity-Token", token)
-            val body = JSONObject().put("text", text).put("source", source.code).put("target", target.code)
+            val body = JSONObject()
+                .put("text", request.text)
+                .put("source", request.source.code)
+                .put("target", request.target.code)
+                .put("style", request.style.code)
+                .put("mode", request.mode)
+                .put("explain", request.explain)
             connection.outputStream.use { it.write(body.toString().toByteArray()) }
             when (connection.responseCode) {
                 200 -> {
-                    val reply = connection.inputStream.bufferedReader().use { it.readText() }
-                    Result.Success(JSONObject(reply).getString("text"), source)
+                    val reply = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                    val meaning = reply.optString("meaning").takeIf { it.isNotBlank() }
+                    Result.Success(reply.getString("text"), request.source, meaning, request.polish)
                 }
                 403 -> Result.Error("Terjemahan hanya untuk aplikasi resmi dari Google Play")
                 else -> Result.Error("Server terjemahan sedang bermasalah, coba lagi")
@@ -98,6 +134,7 @@ class TextTranslator(context: Context) {
 
     private companion object {
         const val TIMEOUT_MS = 15_000
+        val INDONESIAN_LOOKALIKES = setOf("ms", "jv", "su")
 
         fun sha256Hex(input: String): String =
             MessageDigest.getInstance("SHA-256").digest(input.toByteArray()).joinToString("") { "%02x".format(it) }

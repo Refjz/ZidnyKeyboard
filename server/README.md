@@ -9,8 +9,19 @@ Pirated or modified copies get `403 not_genuine`.
 
 ## API
 
-`POST /translate` with header `X-Integrity-Token` and body `{"text": "...", "source": "id", "target": "en"}`.
-Languages: `id`, `en`, `fr`, `zh`, `ja`. Up to 2000 characters. Returns `{"text": "..."}`.
+`POST /translate` with header `X-Integrity-Token` and body
+`{"text": "...", "source": "id", "target": "en", "style": "casual", "mode": "translate", "explain": true}`.
+Languages: `id`, `en`, `fr`, `zh`, `ja`. Up to 2000 characters. Returns `{"text": "...", "meaning": "..."}`.
+
+- `style`: `casual` (default), `polite` or `formal`, how the result should sound.
+- `mode`: `translate` (default), or `polish` to fix the grammar of a text in its own language
+  (then `source` and `target` must be the same).
+- `explain`: when `true`, `meaning` holds the result translated back into Indonesian (not when the target
+  is Indonesian). It costs a second model call.
+
+The integrity token's request hash is `sha256("v2|<source>|<target>|<style>|<mode>|<explain>|<text>")`.
+App versions from before these options send only text, source and target and hash `"<source>|<target>|<text>"`;
+the server still accepts that.
 
 ## One-time setup
 
