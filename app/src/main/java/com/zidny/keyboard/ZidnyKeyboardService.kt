@@ -112,8 +112,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
         lastCorrection = null
         restoreAppLanguage(info.packageName)
-        updateAutoCaps()
-        updateSuggestions()
+        refreshTypingState()
         rememberClip()
         offerRecentClip()
         translateClipboard()
@@ -132,16 +131,18 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        // The cursor moved (a tap, a swipe on the space bar, or a translation): re-check capitals and suggestions.
-        updateAutoCaps()
-        updateSuggestions()
+        // The text or cursor changed (typing, a tap, a swipe on the space bar, or a translation): re-check
+        // capitals and suggestions. This runs after every key, so the key handlers don't repeat it.
+        refreshTypingState()
     }
 
     override fun onText(text: String) {
         val ic = currentInputConnection ?: return
-        val before = ic.getTextBeforeCursor(WORD_LOOKBACK, 0) ?: ""
+        val separator = text.length == 1 && text[0] in WORD_SEPARATORS
+        // Reading the field asks the app and can stall when it is busy, so plain letters skip it.
+        val before = if (separator) ic.getTextBeforeCursor(WORD_LOOKBACK, 0) ?: "" else ""
         ic.beginBatchEdit()
-        if (text.length == 1 && text[0] in WORD_SEPARATORS) finishWord(currentWord(before), text)
+        if (separator) finishWord(currentWord(before), text)
         if (text == " " && settings.doubleSpacePeriod && SentenceRules.shouldAddPeriod(before)) {
             ic.deleteSurroundingText(1, 0)
             ic.commitText(". ", 1)
@@ -149,8 +150,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
             ic.commitText(text, 1)
         }
         ic.endBatchEdit()
-        if (text.length != 1 || text[0] !in WORD_SEPARATORS) lastCorrection = null
-        updateAutoCaps()
+        if (!separator) lastCorrection = null
     }
 
     /** A word was just ended by [separator]: learn it, or fix it if it looks like a typo. */
@@ -186,13 +186,11 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
         val selected = ic.getSelectedText(0)
         if (!selected.isNullOrEmpty()) ic.commitText("", 1) else sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
-        updateAutoCaps()
     }
 
     override fun onKeyCode(keyCode: Int) {
         lastCorrection = null
         sendDownUpKeyEvents(keyCode)
-        updateAutoCaps()
     }
 
     override fun onSuggestion(word: String) {
@@ -217,7 +215,6 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         } else {
             ic.commitText("\n", 1)
         }
-        updateAutoCaps()
     }
 
     override fun onPickLanguage(language: Language) {
@@ -551,22 +548,27 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     /** The letters right before the cursor, i.e. the word being typed. */
     private fun currentWord(before: CharSequence): String = before.takeLastWhile { it.isLetter() || it == '\'' }.toString()
 
-    private fun updateSuggestions() {
+    /** Updates capitals and suggestions from one read of the text before the cursor. */
+    private fun refreshTypingState() {
         val view = keyboardView ?: return
+        val before = currentInputConnection?.getTextBeforeCursor(WORD_LOOKBACK, 0)
+        updateAutoCaps(view, before)
+        updateSuggestions(view, before ?: "")
+    }
+
+    private fun updateSuggestions(view: KeyboardView, before: CharSequence) {
         val words = predictor
         if (!settings.suggestions || words == null || !smartTypingAllowed()) {
             view.setSuggestions(emptyList())
             return
         }
-        val before = currentInputConnection?.getTextBeforeCursor(WORD_LOOKBACK, 0) ?: ""
         view.setSuggestions(words.suggest(currentWord(before)))
     }
 
     /** Capitalise the next letter at the start of a sentence, like most keyboards do. */
-    private fun updateAutoCaps() {
-        val view = keyboardView ?: return
+    private fun updateAutoCaps(view: KeyboardView, before: CharSequence?) {
         if (view.shiftState == KeyboardView.ShiftState.LOCKED) return
-        val wanted = if (shouldCapitalise()) KeyboardView.ShiftState.ON else KeyboardView.ShiftState.OFF
+        val wanted = if (shouldCapitalise(before)) KeyboardView.ShiftState.ON else KeyboardView.ShiftState.OFF
         if (view.shiftState != wanted) view.shiftState = wanted
     }
 
@@ -574,9 +576,8 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
      * Decides from the text itself rather than only the app's hint, since many apps never ask for
      * capitals. Fields where a capital would be wrong (e-mail, web address, password) are left alone.
      */
-    private fun shouldCapitalise(): Boolean {
-        if (!settings.autoCaps || !isPlainTextField()) return false
-        val before = currentInputConnection?.getTextBeforeCursor(50, 0) ?: return false
+    private fun shouldCapitalise(before: CharSequence?): Boolean {
+        if (!settings.autoCaps || !isPlainTextField() || before == null) return false
         return SentenceRules.atSentenceStart(before)
     }
 
