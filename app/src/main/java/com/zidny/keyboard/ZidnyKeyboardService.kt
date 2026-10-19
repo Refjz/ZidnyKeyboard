@@ -184,15 +184,50 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         view.setStatus("Mencari arti pesan…")
         translator.translate(message, Language.INDONESIAN) { result ->
             when (result) {
-                is TextTranslator.Result.Success -> view.showMessage(
-                    "🔍", "Artinya (dari ${result.source.flag} ${result.source.displayName}):", result.text, "💬 Saran balasan",
-                ) {
-                    view.hideMessagePanel()
-                    onSuggestReplies()
-                }
+                is TextTranslator.Result.Success -> showMeaning(
+                    view, "🔍", "Artinya (dari ${result.source.flag} ${result.source.displayName}):", result.text,
+                )
                 is TextTranslator.Result.AlreadyInTarget ->
                     view.showMessage("🔍", "Cek arti pesan", "Pesan yang kamu salin sudah dalam bahasa Indonesia.")
                 is TextTranslator.Result.Error -> view.setStatus(result.message)
+            }
+        }
+    }
+
+    /** Shows what a copied message means; with reply suggestions turned on, one tap offers replies to it. */
+    private fun showMeaning(view: KeyboardView, icon: String, title: String, meaning: String) {
+        if (!settings.replySuggestions) return view.showMessage(icon, title, meaning)
+        view.showMessage(icon, title, meaning, "💬 Saran balasan") {
+            view.hideMessagePanel()
+            onSuggestReplies()
+        }
+    }
+
+    override fun onTranslateBox(text: String, target: Language) {
+        val view = keyboardView ?: return
+        view.showBoxTranslation(text, "", "Menerjemahkan…")
+        translator.translate(text, target, TextTranslator.Options(style = style)) { result ->
+            when (result) {
+                is TextTranslator.Result.Success -> view.showBoxTranslation(
+                    text, result.text, "${result.source.flag} ${result.source.displayName} → ${target.flag} ${target.displayName}",
+                )
+                // Typed in the target language already: show what it means in Indonesian instead, like
+                // Google Translate swapping the languages.
+                is TextTranslator.Result.AlreadyInTarget ->
+                    if (target == Language.INDONESIAN) {
+                        view.showBoxTranslation(text, "", "Teks ini sudah bahasa Indonesia, pilih bahasa tujuan lain")
+                    } else {
+                        translator.translate(text, Language.INDONESIAN) { back ->
+                            when (back) {
+                                is TextTranslator.Result.Success -> view.showBoxTranslation(
+                                    text, back.text, "${back.source.flag} ${back.source.displayName} → 🇮🇩 Indonesia",
+                                )
+                                is TextTranslator.Result.AlreadyInTarget -> view.showBoxTranslation(text, "", "")
+                                is TextTranslator.Result.Error -> view.showBoxTranslation(text, "", back.message)
+                            }
+                        }
+                    }
+                is TextTranslator.Result.Error -> view.showBoxTranslation(text, "", result.message)
             }
         }
     }
@@ -557,12 +592,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         if ("://" in text || text.count { it.isLetter() } < 4 || ' ' !in text.trim()) return
         translator.translate(text, Language.INDONESIAN) { result ->
             if (result !is TextTranslator.Result.Success) return@translate
-            val title = "Pesan yang kamu salin (${result.source.displayName}) artinya:"
-            // One tap offers ready-made replies in the sender's language.
-            view.showMessage("💬", title, result.text, "💬 Saran balasan") {
-                view.hideMessagePanel()
-                onSuggestReplies()
-            }
+            showMeaning(view, "💬", "Pesan yang kamu salin (${result.source.displayName}) artinya:", result.text)
         }
     }
 

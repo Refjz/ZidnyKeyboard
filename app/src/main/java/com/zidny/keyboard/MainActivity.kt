@@ -18,6 +18,8 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
@@ -124,11 +126,20 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    /** True when this screen is showing in English, picked below or because the phone is set to English. */
+    private val english get() = resources.configuration.locales[0].language == "en"
+
     private fun addSettings(root: LinearLayout) {
         root.addView(heading(getString(R.string.settings_title)))
 
+        root.addView(label(getString(R.string.app_language)))
+        root.addView(choices(listOf("id", "en"), if (english) "en" else "id", { if (it == "en") "English" else "Indonesia" }) {
+            // AppCompat restarts this screen in the new language and remembers the choice.
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(it))
+        })
+
         root.addView(label(getString(R.string.theme)))
-        root.addView(choices(KeyboardTheme.entries, settings.theme, { it.displayName }) { update(settings.copy(theme = it)) })
+        root.addView(choices(KeyboardTheme.entries, settings.theme, { themeName(it) }) { update(settings.copy(theme = it)) })
 
         root.addView(label(getString(R.string.background_color)))
         root.addView(backgroundColors())
@@ -136,9 +147,17 @@ class MainActivity : AppCompatActivity() {
         addSwitch(root, R.string.auto_hide_toolbar, settings.autoHideToolbar) {
             update(settings.copy(autoHideToolbar = it))
         }
+        addSwitch(root, R.string.reply_suggestions, settings.replySuggestions) {
+            update(settings.copy(replySuggestions = it))
+        }
+
+        root.addView(label(getString(R.string.key_effect)))
+        root.addView(choices(KeyEffect.entries, settings.keyEffect, { if (english) it.englishName else it.displayName }) {
+            update(settings.copy(keyEffect = it))
+        })
 
         root.addView(label(getString(R.string.layout)))
-        root.addView(choices(KeyboardLayout.entries, settings.layout, { it.displayName }) { update(settings.copy(layout = it)) })
+        root.addView(choices(KeyboardLayout.entries, settings.layout, { layoutName(it) }) { update(settings.copy(layout = it)) })
 
         addSlider(root, R.string.key_height, KeyboardSettings.MIN_HEIGHT, KeyboardSettings.MAX_HEIGHT, 5,
             settings.heightPercent, "%") { update(settings.copy(heightPercent = it)) }
@@ -262,6 +281,15 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    private fun themeName(theme: KeyboardTheme) = if (english) THEME_NAMES_EN[theme] ?: theme.displayName else theme.displayName
+
+    private fun layoutName(layout: KeyboardLayout) = if (!english) layout.displayName else when (layout) {
+        KeyboardLayout.AZERTY -> "AZERTY (French)"
+        KeyboardLayout.QWERTZ -> "QWERTZ (German)"
+        KeyboardLayout.DESKTOP -> "Desktop (like a PC keyboard)"
+        else -> layout.displayName
+    }
+
     private fun update(newSettings: KeyboardSettings) {
         settings = newSettings
         KeyboardSettings.save(this, newSettings)
@@ -269,6 +297,24 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_ASK_MICROPHONE = "ask_microphone"
+
+        private val THEME_NAMES_EN = mapOf(
+            KeyboardTheme.SAMSUNG_LIGHT to "Samsung Light",
+            KeyboardTheme.SAMSUNG_DARK to "Samsung Dark",
+            KeyboardTheme.CLASSIC_DARK to "Classic Dark",
+            KeyboardTheme.OCEAN to "Ocean Blue",
+            KeyboardTheme.MINT to "Mint Green",
+            KeyboardTheme.LAVENDER to "Lavender",
+            KeyboardTheme.SUNSET to "Orange Sunset",
+            KeyboardTheme.LEMON to "Lemon Yellow",
+            KeyboardTheme.SKY to "Sky Blue",
+            KeyboardTheme.MAROON to "Maroon",
+            KeyboardTheme.FOREST to "Forest Green",
+            KeyboardTheme.COFFEE to "Coffee",
+            KeyboardTheme.GALAXY to "Purple Galaxy",
+            KeyboardTheme.AMOLED to "Pitch Black",
+            KeyboardTheme.NAVY_GOLD to "Navy Gold",
+        )
     }
 
     private fun heading(text: String) = TextView(this).apply {

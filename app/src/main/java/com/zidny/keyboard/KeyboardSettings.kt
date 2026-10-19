@@ -149,6 +149,10 @@ data class KeyboardSettings(
     val backgroundColor: Int = 0,
     /** Show the toolbar for a few seconds when the keyboard opens, then hide it behind the 🌐 button. */
     val autoHideToolbar: Boolean = true,
+    /** The 💬 button that suggests replies to a copied message; off until the user turns it on. */
+    val replySuggestions: Boolean = false,
+    /** An animation where a key is pressed, besides the enlarged letter. */
+    val keyEffect: KeyEffect = KeyEffect.NONE,
 ) {
     companion object {
         const val MIN_HEIGHT = 70
@@ -191,6 +195,8 @@ data class KeyboardSettings(
                 perAppLanguage = p.getBoolean("per_app_language", defaults.perAppLanguage),
                 keys3d = p.getBoolean("keys_3d", defaults.keys3d),
                 autoHideToolbar = p.getBoolean("auto_hide_toolbar", defaults.autoHideToolbar),
+                replySuggestions = p.getBoolean("reply_suggestions", defaults.replySuggestions),
+                keyEffect = KeyEffect.entries.firstOrNull { it.name == p.getString("key_effect", null) } ?: defaults.keyEffect,
                 backgroundColor = p.getInt("background_color", defaults.backgroundColor),
             )
         }
@@ -219,6 +225,8 @@ data class KeyboardSettings(
                 .putBoolean("per_app_language", settings.perAppLanguage)
                 .putBoolean("keys_3d", settings.keys3d)
                 .putBoolean("auto_hide_toolbar", settings.autoHideToolbar)
+                .putBoolean("reply_suggestions", settings.replySuggestions)
+                .putString("key_effect", settings.keyEffect.name)
                 .putInt("background_color", settings.backgroundColor)
                 .apply()
         }
