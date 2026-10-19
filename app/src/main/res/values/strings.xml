@@ -25,6 +25,7 @@
     <string name="clipboard_translate">Terjemahkan pesan yang disalin ke bahasa Indonesia (teks dikirim ke server terjemahan)</string>
     <string name="translate_preview">Tampilkan hasil terjemahan dulu sebelum mengganti teks</string>
     <string name="show_meaning">Tampilkan arti hasil terjemahan dalam bahasa Indonesia</string>
+    <string name="auto_hide_toolbar">Sembunyikan bar terjemahan setelah 3 detik (tekan 🌐 untuk memunculkan lagi)</string>
     <string name="keys_3d">Tombol 3D (timbul, huruf lebih tegas)</string>
     <string name="background_color">Warna latar keyboard</string>
     <string name="background_default">Bawaan tema</string>

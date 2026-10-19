@@ -119,6 +119,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         rememberClip()
         offerRecentClip()
         translateClipboard()
+        keyboardView?.showToolbarBriefly()
     }
 
     /** Label for the enter key, e.g. "Kirim" when the app wants a send action. */
@@ -165,6 +166,33 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
                     result.replies, result.language,
                 )
                 is TextTranslator.ReplyResult.Error -> view.showReplies(result.message, emptyList(), null)
+            }
+        }
+    }
+
+    override fun onReadCopied() {
+        val view = keyboardView ?: return
+        val message = copiedText()
+        if (message == null) {
+            view.showMessage(
+                "🔍", "Cek arti pesan",
+                "Tekan lama pesan yang kamu terima di chat, pilih Salin (copy), lalu tekan 🔍. Artinya muncul " +
+                    "di sini dalam bahasa Indonesia tanpa dikirim dan tanpa buka aplikasi lain.",
+            )
+            return
+        }
+        view.setStatus("Mencari arti pesan…")
+        translator.translate(message, Language.INDONESIAN) { result ->
+            when (result) {
+                is TextTranslator.Result.Success -> view.showMessage(
+                    "🔍", "Artinya (dari ${result.source.flag} ${result.source.displayName}):", result.text, "💬 Saran balasan",
+                ) {
+                    view.hideMessagePanel()
+                    onSuggestReplies()
+                }
+                is TextTranslator.Result.AlreadyInTarget ->
+                    view.showMessage("🔍", "Cek arti pesan", "Pesan yang kamu salin sudah dalam bahasa Indonesia.")
+                is TextTranslator.Result.Error -> view.setStatus(result.message)
             }
         }
     }
