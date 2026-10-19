@@ -78,7 +78,11 @@ class KeyboardView(
     enum class ShiftState { OFF, ON, LOCKED }
 
     /** What replaces the letter keys: nothing, or one of the panels opened from the toolbar. */
-    private enum class Panel { KEYS, PICKER, CLIPBOARD, EMOJI, CALCULATOR, REPLIES, TRANSLATOR, FONTS, KAOMOJI, LINES }
+    private enum class Panel {
+        KEYS, PICKER, CLIPBOARD, EMOJI, REPLIES, TRANSLATOR, FONTS, KAOMOJI, LINES,
+        // The 🧰 menu and the small apps in it.
+        TOOLS, CALCULATOR, CONVERTER, CLOCK, CALENDAR,
+    }
 
     private var panel = Panel.KEYS
     private var showSymbols = false
@@ -89,6 +93,20 @@ class KeyboardView(
     private var repliesLanguage: Language? = null
 
     private var calcExpression = ""
+    // The 💱 converter: the amount as typed, which unit is being picked (null for none) and the saved rates.
+    private var convCategory = UnitConverter.Category.MONEY
+    private val convFrom = mutableMapOf(UnitConverter.Category.MONEY to 1)
+    private val convTo = mutableMapOf<UnitConverter.Category, Int>()
+    private var convAmount = "1"
+    private var convPicking: Boolean? = null
+    private var rates: ExchangeRates.Rates? = null
+    // The 🕐 world clock shows the time now, or a time the user stepped to with the arrows.
+    private var clockTime: Long? = null
+    // The 📅 calendar: the month shown and the picked day.
+    private val today get() = java.util.Calendar.getInstance()
+    private var calYear = today.get(java.util.Calendar.YEAR)
+    private var calMonth = today.get(java.util.Calendar.MONTH)
+    private var calDay = today.get(java.util.Calendar.DAY_OF_MONTH)
     private val calcExpressionView = TextView(context)
     private val calcResultView = TextView(context)
     // The 文A translate box: text typed into the box itself rather than the app, like Google Translate.
@@ -162,7 +180,9 @@ class KeyboardView(
     private val replyButton = iconButton("💬") { listener.onSuggestReplies() }.shownIf(settings.replySuggestions)
     private val boxButton = iconButton("文A") { togglePanel(Panel.TRANSLATOR) }.shownIf(settings.toolTranslateBox)
     private val clipboardButton = iconButton("📋") { togglePanel(Panel.CLIPBOARD) }.shownIf(settings.toolClipboard)
-    private val calculatorButton = iconButton("🧮") { togglePanel(Panel.CALCULATOR) }.shownIf(settings.toolCalculator)
+    private val toolsButton = iconButton("🧰") {
+        togglePanel(if (panel in TOOL_APPS) panel else Panel.TOOLS)
+    }.shownIf(settings.toolApps && toolApps().isNotEmpty())
     private val fontButton = iconButton("𝓐") { togglePanel(Panel.FONTS) }.shownIf(settings.toolFonts)
     private val kaomojiButton = iconButton("ツ") { togglePanel(Panel.KAOMOJI) }.shownIf(settings.toolKaomoji)
     private val linesButton = iconButton("🎭") { togglePanel(Panel.LINES) }.shownIf(settings.toolLines)
@@ -174,7 +194,7 @@ class KeyboardView(
         Panel.PICKER to languageButton,
         Panel.EMOJI to emojiButton,
         Panel.CLIPBOARD to clipboardButton,
-        Panel.CALCULATOR to calculatorButton,
+        Panel.TOOLS to toolsButton,
         Panel.REPLIES to replyButton,
         Panel.TRANSLATOR to boxButton,
         Panel.FONTS to fontButton,
@@ -200,7 +220,7 @@ class KeyboardView(
             orientation = LinearLayout.HORIZONTAL
             listOf(
                 languageButton, boxButton, readButton, replyButton, tidyButton, linesButton, emojiButton, kaomojiButton,
-                fontButton, clipboardButton, micButton, calculatorButton, settingsButton,
+                fontButton, clipboardButton, micButton, toolsButton, settingsButton,
             ).forEach {
                 addView(it, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
             }
@@ -436,6 +456,7 @@ class KeyboardView(
 
     private fun togglePanel(target: Panel) {
         panel = if (panel == target) Panel.KEYS else target
+        if (panel == Panel.CONVERTER) refreshRates()
         render()
     }
 
@@ -541,6 +562,10 @@ class KeyboardView(
             (button.background as GradientDrawable).setColor(if (open) theme.accent else theme.specialKey)
             button.setTextColor(if (open) Color.WHITE else theme.text)
         }
+        if (panel in TOOL_APPS) {
+            (toolsButton.background as GradientDrawable).setColor(theme.accent)
+            toolsButton.setTextColor(Color.WHITE)
+        }
         // A letter style stays on after its panel closes, so its button stays lit to show it.
         if (panel != Panel.FONTS && fancyFont != FancyFont.NORMAL) {
             (fontButton.background as GradientDrawable).setColor(theme.accent)
@@ -550,7 +575,11 @@ class KeyboardView(
             Panel.PICKER -> return renderPicker()
             Panel.CLIPBOARD -> return renderClipboard()
             Panel.EMOJI -> return renderEmoji()
+            Panel.TOOLS -> return renderTools()
             Panel.CALCULATOR -> return renderCalculator()
+            Panel.CONVERTER -> return renderConverter()
+            Panel.CLOCK -> return renderClock()
+            Panel.CALENDAR -> return renderCalendar()
             Panel.REPLIES -> return renderReplies()
             Panel.TRANSLATOR -> renderTranslateBox()
             Panel.FONTS -> return renderFonts()
@@ -1199,6 +1228,7 @@ class KeyboardView(
         }
 
         val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        bottom.addView(backToTools(), LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         bottom.addView(createKey(Key.Letters))
         bottom.addView(toolbarButton {
             val value = Calculator.evaluate(calcExpression)?.let(Calculator::format) ?: calcExpression
@@ -1227,6 +1257,488 @@ class KeyboardView(
         calcExpressionView.text = calcExpression.ifEmpty { "0" }
         val result = Calculator.evaluate(calcExpression)?.let(Calculator::format)
         calcResultView.text = if (result != null && result != calcExpression) "= $result" else ""
+    }
+
+    // ---- 🧰 Tools: one toolbar button holding small apps ----
+
+    /** The apps switched on in the settings, with their icon and name. */
+    private fun toolApps() = listOfNotNull(
+        if (settings.appCalculator) Triple(Panel.CALCULATOR, "🧮", "Kalkulator") else null,
+        if (settings.appConverter) Triple(Panel.CONVERTER, "💱", "Kurs & satuan") else null,
+        if (settings.appClock) Triple(Panel.CLOCK, "🕐", "Zona waktu") else null,
+        if (settings.appCalendar) Triple(Panel.CALENDAR, "📅", "Kalender") else null,
+    )
+
+    private fun openTool(target: Panel) {
+        panel = target
+        if (target == Panel.CONVERTER) refreshRates()
+        render()
+    }
+
+    /** The menu of apps, as big tiles. */
+    private fun renderTools() {
+        val grid = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        toolApps().chunked(4).forEach { row ->
+            grid.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                row.forEach { (target, icon, name) ->
+                    addView(LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                        background = rounded(seeThrough(theme.key))
+                        addView(TextView(context).apply {
+                            text = icon
+                            textSize = 26f
+                            gravity = Gravity.CENTER
+                        })
+                        addView(TextView(context).apply {
+                            text = name
+                            textSize = 12f
+                            gravity = Gravity.CENTER
+                            setTextColor(theme.text)
+                            maxLines = 1
+                        })
+                        setOnClickListener {
+                            tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+                            openTool(target)
+                        }
+                    }, LinearLayout.LayoutParams(0, dp(76), 1f).withMargins())
+                }
+                repeat(4 - row.size) { addView(View(context), LinearLayout.LayoutParams(0, dp(76), 1f)) }
+            })
+        }
+        addShrinkable(ScrollView(context).apply { addView(grid) }, panelHeight(0))
+        addShrinkable(bottomKeys(), keyRowHeight())
+    }
+
+    private fun backToTools() = toolbarButton {
+        panel = Panel.TOOLS
+        render()
+    }.apply {
+        text = "‹"
+        textSize = 20f
+        setPadding(dp(12), 0, dp(12), 0)
+    }
+
+    private fun lettersButton() = toolbarButton {
+        panel = Panel.KEYS
+        render()
+    }.apply {
+        text = "ABC"
+        setPadding(dp(10), 0, dp(10), 0)
+    }
+
+    /** The space the letter rows leave for an app below its [TOOL_HEADER_DP] header. */
+    private fun toolBodyHeight(): Int {
+        val letterRows = KeyboardLayouts.letters(settings.layout, settings.numberRow).size
+        return (keyRowHeight() * letterRows - dp(TOOL_HEADER_DP)).coerceAtLeast(dp(150))
+    }
+
+    private fun wrapParams() = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins()
+
+    private fun TextView.highlighted() = apply {
+        setTextColor(Color.WHITE)
+        (background as GradientDrawable).setColor(theme.accent)
+    }
+
+    // ---- 💱 Currency and unit converter ----
+
+    private fun refreshRates() {
+        if (rates == null) rates = ExchangeRates.saved(context)
+        ExchangeRates.refreshIfStale(context) { fresh ->
+            if (fresh != null) rates = fresh
+            if (panel == Panel.CONVERTER) render()
+        }
+    }
+
+    private fun convUnits() = convCategory.units
+    private fun convFromUnit() = convUnits()[convFrom[convCategory] ?: 0]
+    private fun convToUnit() = convUnits()[convTo[convCategory] ?: if (convFromUnit() == convUnits()[0]) 1 else 0]
+
+    private fun convResult(): Double? {
+        val amount = convAmount.toDoubleOrNull() ?: return null
+        return UnitConverter.convert(convCategory, amount, convFromUnit(), convToUnit(), rates?.perDollar.orEmpty())
+    }
+
+    /** The amount as typed, with the Indonesian decimal comma. */
+    private fun convAmountShown() = convAmount.replace('.', ',').ifEmpty { "0" }
+
+    /** Pick a kind of measurement, type an amount and see it converted; one tap types the result. */
+    private fun renderConverter() {
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(backToTools(), wrapParams())
+            val chips = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            UnitConverter.Category.entries.forEach { category ->
+                chips.addView(toolbarButton {
+                    convCategory = category
+                    convPicking = null
+                    if (category == UnitConverter.Category.MONEY) refreshRates()
+                    render()
+                }.apply {
+                    text = category.label
+                    textSize = 13f
+                    setPadding(dp(10), 0, dp(10), 0)
+                    if (category == convCategory) highlighted()
+                }, wrapParams())
+            }
+            addView(HorizontalScrollView(context).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(chips, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT))
+            }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        }
+        content.addView(header, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOL_HEADER_DP)))
+
+        val result = convResult()
+        val money = convCategory == UnitConverter.Category.MONEY
+        val display = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(12), 0)
+            background = rounded(seeThrough(theme.key))
+            addView(TextView(context).apply {
+                text = if (result != null) "${UnitConverter.format(result, convToUnit(), convCategory)} ${convToUnit().code}"
+                else if (money) "Butuh internet sekali untuk ambil kurs" else "–"
+                setTextColor(if (result != null) theme.accent else theme.secondaryText)
+                textSize = if (result != null) 20f else 14f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.START
+            })
+            addView(TextView(context).apply {
+                val updated = rates?.updatedMillis?.takeIf { money && it > 0 }?.let {
+                    val day = java.util.Calendar.getInstance().apply { timeInMillis = it }
+                    " · kurs ${day.get(java.util.Calendar.DAY_OF_MONTH)} ${CalendarTools.MONTHS[day.get(java.util.Calendar.MONTH)].take(3)}"
+                } ?: ""
+                text = "${convAmountShown()} ${convFromUnit().code} (${convFromUnit().name})$updated"
+                setTextColor(theme.secondaryText)
+                textSize = 12f
+                maxLines = 1
+            })
+        }
+        addShrinkable(display, dp(52))
+
+        val bodyHeight = toolBodyHeight() - dp(52)
+        val picking = convPicking
+        if (picking != null) {
+            // Choosing a unit: every unit of this kind as a chip, the current one lit.
+            val current = if (picking) convFromUnit() else convToUnit()
+            val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            convUnits().withIndex().chunked(3).forEach { row ->
+                grid.addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    row.forEach { (index, unit) ->
+                        addView(toolbarButton {
+                            if (picking) convFrom[convCategory] = index else convTo[convCategory] = index
+                            convPicking = null
+                            render()
+                        }.apply {
+                            text = "${unit.code} · ${unit.name}"
+                            textSize = 13f
+                            maxLines = 1
+                            setPadding(dp(6), 0, dp(6), 0)
+                            if (unit == current) highlighted()
+                        }, LinearLayout.LayoutParams(0, dp(40), 1f).withMargins())
+                    }
+                    repeat(3 - row.size) { addView(View(context), LinearLayout.LayoutParams(0, dp(40), 1f)) }
+                })
+            }
+            addShrinkable(ScrollView(context).apply { addView(grid) }, bodyHeight)
+            return
+        }
+
+        val rows = listOf(
+            listOf("7", "8", "9", "⌫", "from"),
+            listOf("4", "5", "6", "C", "swap"),
+            listOf("1", "2", "3", "000", "to"),
+            listOf("ABC", "0", ",", "type"),
+        )
+        val rowHeight = bodyHeight / rows.size
+        val margin = (settings.keyGap * density / 2).toInt()
+        for (labels in rows) {
+            val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            for (label in labels) {
+                val view = TextView(context).apply {
+                    styleKeyText(this)
+                    textSize = if (label.length == 1) settings.textSize.toFloat() else 14f
+                    text = when (label) {
+                        "from" -> "${convFromUnit().code} ▾"
+                        "to" -> "→ ${convToUnit().code} ▾"
+                        "swap" -> "⇅ Tukar"
+                        "type" -> "Ketik hasilnya"
+                        else -> label
+                    }
+                    val color = when {
+                        label == "type" -> theme.accent
+                        label.all { it.isDigit() } -> theme.key
+                        else -> theme.specialKey
+                    }
+                    if (label == "type") setTextColor(Color.WHITE)
+                    background = keyBackground(seeThrough(color)).first
+                    setOnClickListener {
+                        tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+                        onConverterKey(label)
+                    }
+                }
+                val weight = when (label) {
+                    "type" -> 2.4f
+                    "from", "to", "swap" -> 1.4f
+                    else -> 1f
+                }
+                row.addView(view, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, weight).apply {
+                    setMargins(margin, margin, margin, margin)
+                })
+            }
+            addShrinkable(row, rowHeight)
+        }
+    }
+
+    private fun onConverterKey(label: String) {
+        when (label) {
+            "C" -> convAmount = ""
+            "⌫" -> convAmount = convAmount.dropLast(1)
+            "," -> if ('.' !in convAmount) convAmount = convAmount.ifEmpty { "0" } + "."
+            "from" -> convPicking = true
+            "to" -> convPicking = false
+            "swap" -> {
+                val from = convUnits().indexOf(convFromUnit())
+                val to = convUnits().indexOf(convToUnit())
+                convFrom[convCategory] = to
+                convTo[convCategory] = from
+            }
+            "ABC" -> panel = Panel.KEYS
+            "type" -> {
+                val result = convResult() ?: return
+                listener.onText(UnitConverter.sentence(convCategory, convAmountShown(), convFromUnit(), result, convToUnit()))
+                panel = Panel.KEYS
+            }
+            else -> if (convAmount.length < 15) convAmount = (if (convAmount == "0") "" else convAmount) + label
+        }
+        render()
+    }
+
+    // ---- 🕐 World clock ----
+
+    /** The time in other cities, now or at a time stepped to with the arrows; tapping a city types it. */
+    private fun renderClock() {
+        val home = java.util.TimeZone.getDefault().id
+        val now = System.currentTimeMillis()
+        val shown = clockTime ?: now
+        fun step(minutes: Int) {
+            // Stepping starts from the current quarter hour, so the times stay round.
+            val base = clockTime ?: (now - now % (15 * 60_000L))
+            clockTime = base + minutes * 60_000L
+            render()
+        }
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(backToTools(), wrapParams())
+            addView(toolbarButton { step(-60) }.apply { text = "−1j"; textSize = 13f; setPadding(dp(7), 0, dp(7), 0) }, wrapParams())
+            addView(toolbarButton { step(-15) }.apply { text = "−15"; textSize = 13f; setPadding(dp(7), 0, dp(7), 0) }, wrapParams())
+            addView(toolbarButton {
+                clockTime = null
+                render()
+            }.apply {
+                // Tapping it goes back to the time now.
+                text = "🕐 ${WorldClock.time(shown, home)} ${WorldClock.zoneLabel(home, shown)}"
+                setPadding(dp(4), 0, dp(4), 0)
+                maxLines = 1
+                if (clockTime != null) highlighted()
+            }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).withMargins())
+            addView(toolbarButton { step(15) }.apply { text = "+15"; textSize = 13f; setPadding(dp(7), 0, dp(7), 0) }, wrapParams())
+            addView(toolbarButton { step(60) }.apply { text = "+1j"; textSize = 13f; setPadding(dp(7), 0, dp(7), 0) }, wrapParams())
+            addView(lettersButton(), wrapParams())
+        }
+        content.addView(header, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOL_HEADER_DP)))
+
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        WorldClock.cities.forEach { city ->
+            list.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), 0, dp(12), 0)
+                background = rounded(seeThrough(theme.key))
+                addView(TextView(context).apply {
+                    text = "${city.flag}  ${city.name}"
+                    setTextColor(theme.text)
+                    textSize = 15f
+                    maxLines = 1
+                }, LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+                addView(TextView(context).apply {
+                    val day = when (WorldClock.dayShift(shown, home, city.zone)) {
+                        1 -> "besok "
+                        -1 -> "kemarin "
+                        else -> ""
+                    }
+                    text = (day + WorldClock.difference(shown, home, city.zone)).trim()
+                    setTextColor(theme.secondaryText)
+                    textSize = 12f
+                    setPadding(dp(8), 0, dp(8), 0)
+                })
+                addView(TextView(context).apply {
+                    text = WorldClock.time(shown, city.zone)
+                    setTextColor(theme.accent)
+                    textSize = 18f
+                    typeface = Typeface.DEFAULT_BOLD
+                })
+                setOnClickListener {
+                    tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+                    listener.onText(WorldClock.sentence(shown, home, city))
+                    panel = Panel.KEYS
+                    render()
+                }
+            }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(44)).withMargins())
+        }
+        addShrinkable(ScrollView(context).apply { addView(list) }, toolBodyHeight())
+    }
+
+    // ---- 📅 Calendar ----
+
+    /** A month to pick a day from; the day can be typed, and with permission its events and free time shown. */
+    private fun renderCalendar() {
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(backToTools(), wrapParams())
+            addView(toolbarButton { moveMonth(-1) }.apply { text = "◀" }, wrapParams())
+            addView(TextView(context).apply {
+                text = "${CalendarTools.MONTHS[calMonth]} $calYear"
+                setTextColor(theme.text)
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+            addView(toolbarButton { moveMonth(1) }.apply { text = "▶" }, wrapParams())
+            addView(lettersButton(), wrapParams())
+        }
+        content.addView(header, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOL_HEADER_DP)))
+
+        val isThisMonth = calYear == today.get(java.util.Calendar.YEAR) && calMonth == today.get(java.util.Calendar.MONTH)
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val names = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        CalendarTools.SHORT_DAYS.forEachIndexed { index, name ->
+            names.addView(TextView(context).apply {
+                text = name
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTextColor(if (index == 0) Color.parseColor("#E5484D") else theme.secondaryText)
+            }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        }
+        grid.addView(names, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.8f))
+        CalendarTools.monthGrid(calYear, calMonth).chunked(7).forEach { week ->
+            val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            week.forEachIndexed { index, day ->
+                row.addView(TextView(context).apply {
+                    gravity = Gravity.CENTER
+                    textSize = 13f
+                    text = day?.toString() ?: ""
+                    val isToday = isThisMonth && day == today.get(java.util.Calendar.DAY_OF_MONTH)
+                    setTextColor(if (index == 0) Color.parseColor("#E5484D") else theme.text)
+                    if (isToday) typeface = Typeface.DEFAULT_BOLD
+                    when {
+                        day == calDay -> {
+                            setTextColor(Color.WHITE)
+                            background = rounded(theme.accent)
+                        }
+                        isToday -> background = GradientDrawable().apply {
+                            cornerRadius = dp(theme.cornerRadiusDp).toFloat()
+                            setStroke(dp(1), theme.accent)
+                        }
+                    }
+                    if (day != null) setOnClickListener {
+                        tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+                        calDay = day
+                        render()
+                    }
+                }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(1), dp(1), dp(1), dp(1)) })
+            }
+            grid.addView(row, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+
+        val side = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(6), dp(2), dp(4), dp(2))
+            val dayName = CalendarTools.dayName(calYear, calMonth, calDay)
+            addView(TextView(context).apply {
+                text = "$dayName, $calDay ${CalendarTools.MONTHS[calMonth].take(3)}"
+                setTextColor(theme.text)
+                textSize = 14f
+                typeface = Typeface.DEFAULT_BOLD
+                maxLines = 1
+            })
+            val showEvents = settings.calendarEvents && DeviceCalendar.allowed(context)
+            val events = if (showEvents) DeviceCalendar.eventsOn(context, calYear, calMonth, calDay) else emptyList()
+            val agenda = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            when {
+                !showEvents -> agenda.addView(TextView(context).apply {
+                    text = "Mau lihat jadwal & jam kosong? Nyalakan di ⚙️ › Tools › Kalender."
+                    setTextColor(theme.secondaryText)
+                    textSize = 12f
+                    setOnClickListener { listener.onOpenSettings() }
+                })
+                events.isEmpty() -> agenda.addView(TextView(context).apply {
+                    text = "Tidak ada acara."
+                    setTextColor(theme.secondaryText)
+                    textSize = 12f
+                })
+                else -> events.forEach { event ->
+                    agenda.addView(TextView(context).apply {
+                        val time = if (event.allDay) "Seharian" else "${CalendarTools.clock(event.start)}–${CalendarTools.clock(event.end)}"
+                        text = "$time  ${event.title}"
+                        setTextColor(theme.text)
+                        textSize = 12f
+                        maxLines = 2
+                        setPadding(0, dp(2), 0, dp(2))
+                    })
+                }
+            }
+            addView(ScrollView(context).apply { addView(agenda) }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(toolbarButton {
+                listener.onText(CalendarTools.formatDate(calYear, calMonth, calDay))
+                panel = Panel.KEYS
+                render()
+            }.apply {
+                text = "Ketik tanggal"
+                textSize = 13f
+                setPadding(dp(4), 0, dp(4), 0)
+            }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)).withMargins())
+            if (showEvents) addView(toolbarButton {
+                val isToday = isThisMonth && calDay == today.get(java.util.Calendar.DAY_OF_MONTH)
+                val clock = java.util.Calendar.getInstance()
+                val nowMinutes = clock.get(java.util.Calendar.HOUR_OF_DAY) * 60 + clock.get(java.util.Calendar.MINUTE)
+                val slots = CalendarTools.freeSlots(events, CalendarTools.dayStart(isToday, nowMinutes), CalendarTools.DAY_END)
+                val label = if (isToday) "Hari ini" else "$dayName, $calDay ${CalendarTools.MONTHS[calMonth]}"
+                listener.onText(CalendarTools.freeSentence(label, slots))
+                panel = Panel.KEYS
+                render()
+            }.apply {
+                text = "Ketik jam kosong"
+                textSize = 13f
+                setPadding(dp(4), 0, dp(4), 0)
+                highlighted()
+            }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)).withMargins())
+        }
+
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(grid, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1.35f))
+            addView(side, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        }
+        addShrinkable(body, toolBodyHeight())
+    }
+
+    private fun moveMonth(delta: Int) {
+        val months = calYear * 12 + calMonth + delta
+        calYear = months / 12
+        calMonth = months % 12
+        // Keep the same day where the new month has it, e.g. 31 January becomes 28 February.
+        val last = java.util.Calendar.getInstance().apply {
+            clear()
+            set(calYear, calMonth, 1)
+        }.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        calDay = calDay.coerceAtMost(last)
+        render()
     }
 
     private fun colorFor(key: Key) = seeThrough(when {
@@ -1552,5 +2064,7 @@ class KeyboardView(
         const val BOX_DELAY_MS = 700L
         const val BOX_VISIBLE_CHARS = 90
         const val EMOJI_COLUMNS = 8
+        const val TOOL_HEADER_DP = 38
+        val TOOL_APPS = setOf(Panel.TOOLS, Panel.CALCULATOR, Panel.CONVERTER, Panel.CLOCK, Panel.CALENDAR)
     }
 }

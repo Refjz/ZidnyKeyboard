@@ -159,7 +159,14 @@ data class KeyboardSettings(
     val toolEmoji: Boolean = true,
     val toolClipboard: Boolean = true,
     val toolMic: Boolean = true,
-    val toolCalculator: Boolean = true,
+    /** The 🧰 button, a menu of small apps; each app in it can be switched off on its own. */
+    val toolApps: Boolean = true,
+    val appCalculator: Boolean = true,
+    val appConverter: Boolean = true,
+    val appClock: Boolean = true,
+    val appCalendar: Boolean = true,
+    /** Show the phone's calendar events and free time in 📅; needs the calendar permission. */
+    val calendarEvents: Boolean = false,
     val toolFonts: Boolean = false,
     val toolKaomoji: Boolean = false,
     val toolLines: Boolean = false,
@@ -231,7 +238,13 @@ data class KeyboardSettings(
                 toolEmoji = p.getBoolean("tool_emoji", defaults.toolEmoji),
                 toolClipboard = p.getBoolean("tool_clipboard", defaults.toolClipboard),
                 toolMic = p.getBoolean("tool_mic", defaults.toolMic),
-                toolCalculator = p.getBoolean("tool_calculator", defaults.toolCalculator),
+                toolApps = p.getBoolean("tool_apps", defaults.toolApps),
+                // The calculator had its own toolbar button before it moved into 🧰, so its old switch carries over.
+                appCalculator = p.getBoolean("app_calculator", p.getBoolean("tool_calculator", defaults.appCalculator)),
+                appConverter = p.getBoolean("app_converter", defaults.appConverter),
+                appClock = p.getBoolean("app_clock", defaults.appClock),
+                appCalendar = p.getBoolean("app_calendar", defaults.appCalendar),
+                calendarEvents = p.getBoolean("calendar_events", defaults.calendarEvents),
                 toolFonts = p.getBoolean("tool_fonts", defaults.toolFonts),
                 toolKaomoji = p.getBoolean("tool_kaomoji", defaults.toolKaomoji),
                 toolLines = p.getBoolean("tool_lines", defaults.toolLines),
@@ -279,7 +292,12 @@ data class KeyboardSettings(
                 .putBoolean("tool_emoji", settings.toolEmoji)
                 .putBoolean("tool_clipboard", settings.toolClipboard)
                 .putBoolean("tool_mic", settings.toolMic)
-                .putBoolean("tool_calculator", settings.toolCalculator)
+                .putBoolean("tool_apps", settings.toolApps)
+                .putBoolean("app_calculator", settings.appCalculator)
+                .putBoolean("app_converter", settings.appConverter)
+                .putBoolean("app_clock", settings.appClock)
+                .putBoolean("app_calendar", settings.appCalendar)
+                .putBoolean("calendar_events", settings.calendarEvents)
                 .putBoolean("tool_fonts", settings.toolFonts)
                 .putBoolean("tool_kaomoji", settings.toolKaomoji)
                 .putBoolean("tool_lines", settings.toolLines)
