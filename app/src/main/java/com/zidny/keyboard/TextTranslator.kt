@@ -73,11 +73,15 @@ class TextTranslator(context: Context) {
         val style: TranslationStyle,
         val polish: Boolean,
         val explain: Boolean,
+        /** Sends only text, source and target, like app versions before styles, for a server not yet updated. */
+        val legacy: Boolean = false,
     ) {
         val mode get() = if (polish) "polish" else "translate"
 
         /** Must match requestHashInput() in server/src/index.js. */
-        val hashInput get() = "v2|${source.code}|${target.code}|${style.code}|$mode|$explain|$text"
+        val hashInput get() =
+            if (legacy) "${source.code}|${target.code}|$text"
+            else "v2|${source.code}|${target.code}|${style.code}|$mode|$explain|$text"
     }
 
     private fun translateOnServer(request: Request, onResult: (Result) -> Unit) {
@@ -88,7 +92,13 @@ class TextTranslator(context: Context) {
         integrity.token(sha256Hex(request.hashInput)) { token ->
             thread(name = "translate") {
                 val result = post(request, token)
-                main.post { onResult(result) }
+                // A server still running the old version rejects the new request format as not genuine.
+                // Plain translation still works there, so ask again the old way (without style or meaning).
+                if (result == NOT_GENUINE && !request.legacy && !request.polish) {
+                    main.post { translateOnServer(request.copy(legacy = true), onResult) }
+                } else {
+                    main.post { onResult(result) }
+                }
             }
         }
     }
@@ -106,9 +116,9 @@ class TextTranslator(context: Context) {
                 .put("text", request.text)
                 .put("source", request.source.code)
                 .put("target", request.target.code)
-                .put("style", request.style.code)
-                .put("mode", request.mode)
-                .put("explain", request.explain)
+            if (!request.legacy) {
+                body.put("style", request.style.code).put("mode", request.mode).put("explain", request.explain)
+            }
             connection.outputStream.use { it.write(body.toString().toByteArray()) }
             when (connection.responseCode) {
                 200 -> {
@@ -116,7 +126,7 @@ class TextTranslator(context: Context) {
                     val meaning = reply.optString("meaning").takeIf { it.isNotBlank() }
                     Result.Success(reply.getString("text"), request.source, meaning, request.polish)
                 }
-                403 -> Result.Error("Terjemahan hanya untuk aplikasi resmi dari Google Play")
+                403 -> NOT_GENUINE
                 else -> Result.Error("Server terjemahan sedang bermasalah, coba lagi")
             }
         } catch (e: IOException) {
@@ -135,6 +145,7 @@ class TextTranslator(context: Context) {
     private companion object {
         const val TIMEOUT_MS = 15_000
         val INDONESIAN_LOOKALIKES = setOf("ms", "jv", "su")
+        val NOT_GENUINE = Result.Error("Terjemahan hanya untuk aplikasi resmi dari Google Play")
 
         fun sha256Hex(input: String): String =
             MessageDigest.getInstance("SHA-256").digest(input.toByteArray()).joinToString("") { "%02x".format(it) }

@@ -40,4 +40,7 @@ jobs:
 
       - name: Explain missing setup
         if: github.ref == 'refs/heads/main' && env.HAS_CLOUDFLARE != 'true'
-        run: echo "::warning::Set the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets to deploy the translation server (see server/README.md)."
+        # Fail loudly: a skipped deploy leaves the live server older than the app, which then gets rejected.
+        run: |
+          echo "::error::The translation server was NOT deployed. Set the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets (see server/README.md), then run this workflow again."
+          exit 1
