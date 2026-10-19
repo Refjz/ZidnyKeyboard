@@ -147,6 +147,8 @@ data class KeyboardSettings(
     val keys3d: Boolean = true,
     /** Colour behind the keys instead of the theme's, or 0 for the theme's own. */
     val backgroundColor: Int = 0,
+    /** Show the toolbar for a few seconds when the keyboard opens, then hide it behind the 🌐 button. */
+    val autoHideToolbar: Boolean = true,
 ) {
     companion object {
         const val MIN_HEIGHT = 70
@@ -188,6 +190,7 @@ data class KeyboardSettings(
                 showMeaning = p.getBoolean("show_meaning", defaults.showMeaning),
                 perAppLanguage = p.getBoolean("per_app_language", defaults.perAppLanguage),
                 keys3d = p.getBoolean("keys_3d", defaults.keys3d),
+                autoHideToolbar = p.getBoolean("auto_hide_toolbar", defaults.autoHideToolbar),
                 backgroundColor = p.getInt("background_color", defaults.backgroundColor),
             )
         }
@@ -215,6 +218,7 @@ data class KeyboardSettings(
                 .putBoolean("show_meaning", settings.showMeaning)
                 .putBoolean("per_app_language", settings.perAppLanguage)
                 .putBoolean("keys_3d", settings.keys3d)
+                .putBoolean("auto_hide_toolbar", settings.autoHideToolbar)
                 .putInt("background_color", settings.backgroundColor)
                 .apply()
         }

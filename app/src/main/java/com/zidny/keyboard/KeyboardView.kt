@@ -60,6 +60,8 @@ class KeyboardView(
         fun onSuggestReplies()
         /** The user tapped ⚙️ to open the keyboard's settings. */
         fun onOpenSettings()
+        /** The user tapped 🔍 to read the copied message in Indonesian before replying. */
+        fun onReadCopied()
     }
 
     enum class ShiftState { OFF, ON, LOCKED }
@@ -121,6 +123,7 @@ class KeyboardView(
     }
     private val micButton = iconButton("🎤") { listener.onVoice() }
     private val emojiButton = iconButton("😊") { togglePanel(Panel.EMOJI) }
+    private val readButton = iconButton("🔍") { listener.onReadCopied() }
     private val replyButton = iconButton("💬") { listener.onSuggestReplies() }
     private val clipboardButton = iconButton("📋") { togglePanel(Panel.CLIPBOARD) }
     private val calculatorButton = iconButton("🧮") { togglePanel(Panel.CALCULATOR) }
@@ -151,7 +154,7 @@ class KeyboardView(
         orientation = LinearLayout.HORIZONTAL
         val tools = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            listOf(languageButton, emojiButton, replyButton, clipboardButton, micButton, calculatorButton, settingsButton).forEach {
+            listOf(languageButton, readButton, replyButton, emojiButton, clipboardButton, micButton, calculatorButton, settingsButton).forEach {
                 addView(it, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
             }
         }
@@ -208,8 +211,29 @@ class KeyboardView(
             }
         }
     }
+    // The toolbar shows for a few seconds when the keyboard opens and then gets out of the way;
+    // this button in the suggestion bar brings it back.
+    private var toolbarShown = true
+    private var busy = false
+    private val toolbarTimer = Handler(Looper.getMainLooper())
+    private val hideToolbar = object : Runnable {
+        override fun run() {
+            // Keep it while something on it is in use, and look again a little later.
+            if (panel != Panel.KEYS || busy || messagePanel.visibility == VISIBLE) {
+                toolbarTimer.postDelayed(this, TOOLBAR_SHOW_MS)
+            } else {
+                setToolbarShown(false)
+            }
+        }
+    }
+    private val toolbarToggle = iconButton("🌐") {
+        toolbarTimer.removeCallbacks(hideToolbar)
+        setToolbarShown(!toolbarShown)
+    }.apply { visibility = if (settings.autoHideToolbar) VISIBLE else GONE }
+
     private val strip = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
+        addView(toolbarToggle, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(messageChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(recentClipChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(statusText, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
@@ -402,7 +426,26 @@ class KeyboardView(
         messageActionHandler = null
     }
 
+    /** Shows the toolbar, then hides it after a few seconds when the user chose that in the settings. */
+    fun showToolbarBriefly() {
+        toolbarTimer.removeCallbacks(hideToolbar)
+        setToolbarShown(true)
+        if (settings.autoHideToolbar) toolbarTimer.postDelayed(hideToolbar, TOOLBAR_SHOW_MS)
+    }
+
+    private fun setToolbarShown(shown: Boolean) {
+        toolbarShown = shown
+        toolbar.visibility = if (shown) VISIBLE else GONE
+        (messagePanel.layoutParams as? LayoutParams)?.let {
+            it.topMargin = if (shown) toolbarHeight() else 0
+            messagePanel.layoutParams = it
+        }
+    }
+
     fun setTranslating(busy: Boolean) {
+        this.busy = busy
+        // A translation started from a hidden toolbar (e.g. by voice) still shows its progress there.
+        if (busy) setToolbarShown(true)
         translateButton.isEnabled = !busy
         translateButton.alpha = if (busy) 0.5f else 1f
     }
@@ -471,6 +514,7 @@ class KeyboardView(
 
     override fun onDetachedFromWindow() {
         stopKeyRepeat()
+        toolbarTimer.removeCallbacksAndMessages(null)
         super.onDetachedFromWindow()
     }
 
@@ -542,7 +586,7 @@ class KeyboardView(
 
         panel.addView(caption("Terjemahkan ke"))
         val languages = Language.entries
-        panel.addView(choiceRow(languages.map { it.displayName to (it == pickedLanguage) }) {
+        panel.addView(choiceRow(languages.map { "${it.flag} ${it.displayName}" to (it == pickedLanguage) }) {
             listener.onPickLanguage(languages[it])
         })
         panel.addView(caption("Gaya bahasa"))
@@ -1110,6 +1154,7 @@ class KeyboardView(
         const val LANDSCAPE_STRIP_DP = 32
         const val LANDSCAPE_ROW_DP = 40
         const val KEY_EDGE_DP = 3
+        const val TOOLBAR_SHOW_MS = 3000L
         const val EMOJI_COLUMNS = 8
     }
 }

@@ -133,6 +133,9 @@ class MainActivity : AppCompatActivity() {
         root.addView(label(getString(R.string.background_color)))
         root.addView(backgroundColors())
         addSwitch(root, R.string.keys_3d, settings.keys3d) { update(settings.copy(keys3d = it)) }
+        addSwitch(root, R.string.auto_hide_toolbar, settings.autoHideToolbar) {
+            update(settings.copy(autoHideToolbar = it))
+        }
 
         root.addView(label(getString(R.string.layout)))
         root.addView(choices(KeyboardLayout.entries, settings.layout, { it.displayName }) { update(settings.copy(layout = it)) })
