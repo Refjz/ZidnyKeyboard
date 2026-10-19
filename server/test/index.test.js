@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import worker, { checkVerdict, polish, polishPrompt, requestHashInput, sha256Hex, translate, translationPrompt, validate, verifyIntegrity } from "../src/index.js";
+import worker, { checkVerdict, parseReplies, polish, polishPrompt, requestHashInput, sha256Hex, translate, translationPrompt, validate, verifyIntegrity } from "../src/index.js";
 
 const PACKAGE = "com.zidny.keyboard";
 const NOW = 1_800_000_000_000;
@@ -148,4 +148,42 @@ test("polish has no fallback model", async () => {
   const broken = { run: async () => ({ response: "" }) };
   await assert.rejects(polish(broken, "i has cat", "en"));
   assert.match(polishPrompt("ja", "formal"), /Japanese/);
+});
+
+test("validate accepts reply mode in any language pair", () => {
+  assert.equal(validate({ text: "are you free tonight?", source: "en", target: "en", mode: "reply" }), null);
+  assert.equal(validate({ text: "are you free tonight?", source: "en", target: "id", mode: "reply", style: "polite" }), null);
+  assert.ok(validate({ text: "hi", source: "en", target: "en", mode: "reply", explain: true }));
+});
+
+test("parseReplies strips numbering and quotes and keeps meanings only when asked", () => {
+  const raw = '1. "Sure, see you at 7!" ||| Oke, sampai jumpa jam 7!\n2) What time works for you? ||| Jam berapa?\n\n- Sorry, I can\'t tonight.|||Maaf, malam ini nggak bisa.\n4. extra';
+  assert.deepEqual(parseReplies(raw, true), [
+    { text: "Sure, see you at 7!", meaning: "Oke, sampai jumpa jam 7!" },
+    { text: "What time works for you?", meaning: "Jam berapa?" },
+    { text: "Sorry, I can't tonight.", meaning: "Maaf, malam ini nggak bisa." },
+  ]);
+  assert.deepEqual(parseReplies("Boleh\nNanti dulu ya ||| x", false), [{ text: "Boleh" }, { text: "Nanti dulu ya" }]);
+});
+
+test("worker returns reply suggestions in reply mode", async () => {
+  const seen = [];
+  const ai = {
+    run: async (model, input) => {
+      seen.push(input);
+      return { response: "Sure! ||| Boleh!\nWhen? ||| Kapan?\nMaybe later ||| Nanti aja" };
+    },
+  };
+  const env = { AI: ai, PACKAGE_NAME: PACKAGE, REQUIRE_INTEGRITY: "false" };
+  const body = { text: "wanna grab dinner?", source: "en", target: "en", style: "casual", mode: "reply", explain: false };
+  const response = await worker.fetch(new Request("https://x/translate", { method: "POST", body: JSON.stringify(body) }), env);
+  assert.deepEqual(await response.json(), {
+    replies: [
+      { text: "Sure!", meaning: "Boleh!" },
+      { text: "When?", meaning: "Kapan?" },
+      { text: "Maybe later", meaning: "Nanti aja" },
+    ],
+  });
+  assert.match(seen[0].messages[0].content, /received this chat message in English/);
+  assert.equal(requestHashInput(body), "v2|en|en|casual|reply|false|wanna grab dinner?");
 });

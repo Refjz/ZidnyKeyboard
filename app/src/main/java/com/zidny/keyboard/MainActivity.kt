@@ -3,11 +3,14 @@ package com.zidny.keyboard
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.view.View
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -125,32 +128,14 @@ class MainActivity : AppCompatActivity() {
         root.addView(heading(getString(R.string.settings_title)))
 
         root.addView(label(getString(R.string.theme)))
-        val themes = RadioGroup(this)
-        KeyboardTheme.entries.forEachIndexed { index, theme ->
-            themes.addView(RadioButton(this).apply {
-                id = index + 1
-                text = theme.displayName
-                isChecked = theme == settings.theme
-            })
-        }
-        themes.setOnCheckedChangeListener { _, checkedId ->
-            update(settings.copy(theme = KeyboardTheme.entries[checkedId - 1]))
-        }
-        root.addView(themes)
+        root.addView(choices(KeyboardTheme.entries, settings.theme, { it.displayName }) { update(settings.copy(theme = it)) })
+
+        root.addView(label(getString(R.string.background_color)))
+        root.addView(backgroundColors())
+        addSwitch(root, R.string.keys_3d, settings.keys3d) { update(settings.copy(keys3d = it)) }
 
         root.addView(label(getString(R.string.layout)))
-        val layouts = RadioGroup(this)
-        KeyboardLayout.entries.forEachIndexed { index, layout ->
-            layouts.addView(RadioButton(this).apply {
-                id = index + 1
-                text = layout.displayName
-                isChecked = layout == settings.layout
-            })
-        }
-        layouts.setOnCheckedChangeListener { _, checkedId ->
-            update(settings.copy(layout = KeyboardLayout.entries[checkedId - 1]))
-        }
-        root.addView(layouts)
+        root.addView(choices(KeyboardLayout.entries, settings.layout, { it.displayName }) { update(settings.copy(layout = it)) })
 
         addSlider(root, R.string.key_height, KeyboardSettings.MIN_HEIGHT, KeyboardSettings.MAX_HEIGHT, 5,
             settings.heightPercent, "%") { update(settings.copy(heightPercent = it)) }
@@ -186,6 +171,58 @@ class MainActivity : AppCompatActivity() {
         addSwitch(root, R.string.per_app_language, settings.perAppLanguage) {
             update(settings.copy(perAppLanguage = it))
         }
+    }
+
+    /**
+     * One radio button per entry. Ids are generated so the theme and layout lists never share one: with shared
+     * ids Android restored the wrong button after the screen was rebuilt and changed the setting back.
+     */
+    private fun <T> choices(entries: List<T>, selected: T, name: (T) -> String, onPick: (T) -> Unit): RadioGroup {
+        val group = RadioGroup(this)
+        val ids = entries.map { View.generateViewId() }
+        entries.forEachIndexed { index, entry ->
+            group.addView(RadioButton(this).apply {
+                id = ids[index]
+                text = name(entry)
+                isChecked = entry == selected
+            })
+        }
+        group.setOnCheckedChangeListener { _, checkedId ->
+            ids.indexOf(checkedId).takeIf { it >= 0 }?.let { onPick(entries[it]) }
+        }
+        return group
+    }
+
+    /** A row of colour circles for the keyboard background, starting with the theme's own colour. */
+    private fun backgroundColors(): View {
+        val size = (40 * resources.displayMetrics.density).toInt()
+        val gap = (6 * resources.displayMetrics.density).toInt()
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val swatches = mutableListOf<Pair<Int, TextView>>()
+        fun mark() = swatches.forEach { (color, view) ->
+            (view.background as GradientDrawable).setStroke(if (color == settings.backgroundColor) gap / 2 else 1, 0xFF3E91FF.toInt())
+            view.text = if (color == settings.backgroundColor) "✓" else ""
+        }
+        (listOf(0) + BACKGROUND_COLORS).forEach { color ->
+            val swatch = TextView(this).apply {
+                gravity = android.view.Gravity.CENTER
+                val fill = if (color == 0) settings.theme.background else color
+                setTextColor(if (androidx.core.graphics.ColorUtils.calculateLuminance(fill) > 0.5) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
+                contentDescription = if (color == 0) getString(R.string.background_default) else "#%06X".format(color and 0xFFFFFF)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(if (color == 0) settings.theme.background else color)
+                }
+                setOnClickListener {
+                    update(settings.copy(backgroundColor = color))
+                    mark()
+                }
+            }
+            swatches.add(color to swatch)
+            row.addView(swatch, LinearLayout.LayoutParams(size, size).apply { setMargins(0, gap, gap, gap) })
+        }
+        mark()
+        return HorizontalScrollView(this).apply { addView(row) }
     }
 
     private fun addSwitch(root: LinearLayout, labelRes: Int, value: Boolean, onChange: (Boolean) -> Unit) {

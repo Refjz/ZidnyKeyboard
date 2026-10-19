@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">ZidnyKeyboard</string>
     <string name="setup_title">Selamat datang di ZidnyKeyboard</string>
-    <string name="setup_steps">1. Tekan \"Aktifkan keyboard\" lalu nyalakan ZidnyKeyboard.\n2. Tekan \"Pilih keyboard\" lalu pilih ZidnyKeyboard.\n3. Coba ketik di kolom di bawah ini, tekan tombol \"→ EN\" untuk memilih bahasa tujuan dan gaya bahasa (Santai, Sopan, atau Formal), lalu tekan \"Terjemahkan\". Kalau kalimatnya sudah dalam bahasa tujuan (misalnya bahasa Inggris yang berantakan), tombol itu merapikan tata bahasanya.\n4. Atur tema, tata letak, dan ukuran keyboard di bawah. Tahan tombol huruf untuk angka dan huruf beraksen, geser spasi untuk memindahkan kursor, tekan 📋 untuk menempel teks yang pernah disalin. Kalau tombol bawah tertutup tombol sistem, naikkan \"Jarak keyboard dari bawah layar\". Perubahan langsung terlihat saat keyboard dibuka lagi.\n5. Terjemahan butuh koneksi internet.</string>
+    <string name="setup_steps">1. Tekan \"Aktifkan keyboard\" lalu nyalakan ZidnyKeyboard.\n2. Tekan \"Pilih keyboard\" lalu pilih ZidnyKeyboard.\n3. Coba ketik di kolom di bawah ini, tekan tombol \"→ EN\" untuk memilih bahasa tujuan dan gaya bahasa (Santai, Sopan, atau Formal), lalu tekan \"Terjemahkan\". Kalau kalimatnya sudah dalam bahasa tujuan (misalnya bahasa Inggris yang berantakan), tombol itu merapikan tata bahasanya.\n4. Atur tema, tata letak, dan ukuran keyboard di bawah. Tahan tombol huruf untuk angka dan huruf beraksen, geser spasi untuk memindahkan kursor, tekan 📋 untuk menempel teks yang pernah disalin, 😊 untuk emoji, 🧮 untuk kalkulator, dan ⚙️ untuk membuka halaman ini. Salin pesan yang kamu terima lalu tekan 💬 untuk mendapat saran balasan dalam bahasa pengirimnya. Kalau tombol bawah tertutup tombol sistem, naikkan \"Jarak keyboard dari bawah layar\". Perubahan langsung terlihat di keyboard.\n5. Terjemahan butuh koneksi internet.</string>
     <string name="enable_keyboard">Aktifkan keyboard</string>
     <string name="choose_keyboard">Pilih keyboard</string>
     <string name="try_here">Coba ketik di sini…</string>
@@ -25,6 +25,9 @@
     <string name="clipboard_translate">Terjemahkan pesan yang disalin ke bahasa Indonesia (teks dikirim ke server terjemahan)</string>
     <string name="translate_preview">Tampilkan hasil terjemahan dulu sebelum mengganti teks</string>
     <string name="show_meaning">Tampilkan arti hasil terjemahan dalam bahasa Indonesia</string>
+    <string name="keys_3d">Tombol 3D (timbul, huruf lebih tegas)</string>
+    <string name="background_color">Warna latar keyboard</string>
+    <string name="background_default">Bawaan tema</string>
     <string name="per_app_language">Ingat bahasa dan gaya bahasa untuk tiap aplikasi</string>
     <string name="voice_title">Ketik pakai suara</string>
     <string name="voice_hint">Tekan 🎤 di keyboard, bicara dalam bahasa Indonesia, lalu hasilnya langsung diterjemahkan.</string>

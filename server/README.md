@@ -15,7 +15,9 @@ Languages: `id`, `en`, `fr`, `zh`, `ja`. Up to 2000 characters. Returns `{"text"
 
 - `style`: `casual` (default), `polite` or `formal`, how the result should sound.
 - `mode`: `translate` (default), or `polish` to fix the grammar of a text in its own language
-  (then `source` and `target` must be the same).
+  (then `source` and `target` must be the same), or `reply` to suggest replies to a message received in
+  `source`, written in `target`. Reply mode returns `{"replies": [{"text": "...", "meaning": "..."}]}` with
+  three replies, each with its Indonesian `meaning` unless `target` is `id`; `explain` must be `false`.
 - `explain`: when `true`, `meaning` holds the result translated back into Indonesian (not when the target
   is Indonesian). It costs a second model call.
 
