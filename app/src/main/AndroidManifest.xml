@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Only when the user turns on events in the 📅 calendar tool; read on the phone, never sent anywhere. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
 
     <!-- Lets the keyboard find the phone's speech recogniser on Android 11+. -->
     <queries>

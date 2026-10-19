@@ -59,6 +59,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var enableStep: TextView
     private lateinit var chooseStep: TextView
 
+    /** The calendar switch, turned back off if the user refuses the permission. */
+    private var calendarSwitch: SwitchCompat? = null
+    private val askCalendar = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        update(settings.copy(calendarEvents = granted))
+        if (!granted) calendarSwitch?.isChecked = false
+    }
+
     private val pickPhoto = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@registerForActivityResult
         thread(name = "save-background") {
@@ -307,7 +314,25 @@ class MainActivity : AppCompatActivity() {
         })
         addView(switch(tr("📋  Riwayat salinan", "📋  Clipboard"), settings.toolClipboard) { update(settings.copy(toolClipboard = it)) })
         addView(switch(tr("🎤  Ketik pakai suara", "🎤  Voice typing"), settings.toolMic) { update(settings.copy(toolMic = it)) })
-        addView(switch(tr("🧮  Kalkulator", "🧮  Calculator"), settings.toolCalculator) { update(settings.copy(toolCalculator = it)) })
+        val calendarEventsSwitch = switch(tr("Tampilkan jadwal & jam kosong dari kalender HP", "Show events & free time from the phone's calendar"),
+            settings.calendarEvents && DeviceCalendar.allowed(this@MainActivity)) { on ->
+            if (on && !DeviceCalendar.allowed(this@MainActivity)) askCalendar.launch(Manifest.permission.READ_CALENDAR)
+            else update(settings.copy(calendarEvents = on))
+        }
+        calendarSwitch = calendarEventsSwitch
+        val calendarOptions = group(calendarEventsSwitch)
+        val apps = group(
+            hint(tr("Satu tombol berisi aplikasi kecil, biar bar atas tetap rapi.", "One button holding small apps, so the toolbar stays tidy.")),
+            switch(tr("🧮  Kalkulator", "🧮  Calculator"), settings.appCalculator) { update(settings.copy(appCalculator = it)) },
+            switch(tr("💱  Kurs & konversi satuan", "💱  Currency & unit converter"), settings.appConverter) {
+                update(settings.copy(appConverter = it))
+            },
+            switch(tr("🕐  Zona waktu dunia", "🕐  World clock"), settings.appClock) { update(settings.copy(appClock = it)) },
+            switch(tr("📅  Kalender", "📅  Calendar"), settings.appCalendar, calendarOptions) { update(settings.copy(appCalendar = it)) },
+            calendarOptions,
+        )
+        addView(switch(tr("🧰  Tools", "🧰  Tools"), settings.toolApps, apps) { update(settings.copy(toolApps = it)) })
+        addView(apps)
     }
 
     private fun translationCard() = card("🤖", tr("Terjemahan", "Translation")).apply {
