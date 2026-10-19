@@ -87,28 +87,56 @@ class TextTranslator(context: Context) {
         identifier.identifyLanguage(message)
             .addOnSuccessListener { tag ->
                 val language = if (tag in INDONESIAN_LOOKALIKES) Language.INDONESIAN else Language.fromCode(tag) ?: Language.INDONESIAN
-                val request = Request(message, language, language, style, polish = false, explain = false, reply = true)
-                integrity.token(sha256Hex(request.hashInput)) { token ->
-                    thread(name = "replies") {
-                        val result = try {
-                            val replies = postJson(request, token).getJSONArray("replies")
-                            val list = (0 until replies.length()).map { i ->
-                                val item = replies.getJSONObject(i)
-                                Reply(item.getString("text"), item.optString("meaning").takeIf { it.isNotBlank() })
-                            }
-                            if (list.isEmpty()) ReplyResult.Error("Belum ada saran balasan, coba lagi")
-                            else ReplyResult.Success(list, language)
-                        } catch (e: ServerError) {
-                            // A server from before reply suggestions turns the request down as invalid.
-                            ReplyResult.Error(if (e.status == 400) "Saran balasan belum aktif di server" else e.error.message)
-                        } catch (e: org.json.JSONException) {
-                            ReplyResult.Error("Server terjemahan sedang bermasalah, coba lagi")
-                        }
-                        main.post { onResult(result) }
-                    }
-                }
+                val request = Request(message, language, language, style, polish = false, explain = false, special = "reply")
+                fetchReplies(request, language, "Saran balasan belum aktif di server", onResult)
             }
             .addOnFailureListener { onResult(ReplyResult.Error("Gagal mengenali bahasa")) }
+    }
+
+    /**
+     * Writes ready-to-send lines in [mood] (e.g. a sweet pick-up line or a friendly roast) in [language],
+     * about [topic] when given, each with its Indonesian meaning. Calls [onResult] on the main thread.
+     */
+    fun suggestLines(mood: LineMood, topic: String, language: Language, style: TranslationStyle, onResult: (ReplyResult) -> Unit) {
+        if (BuildConfig.TRANSLATE_URL.isEmpty()) {
+            onResult(ReplyResult.Error("Server terjemahan belum diatur"))
+            return
+        }
+        // The mood goes on the first line of the text, so it is covered by the request hash like the rest.
+        val request = Request("${mood.code}\n${topic.trim()}", language, language, style, polish = false, explain = false, special = "line")
+        fetchReplies(request, language, "Fitur AI ini belum aktif di server", onResult)
+    }
+
+    /** Fixes the spelling and grammar of [text] in its own language, e.g. "km dmn" → "Kamu di mana?". */
+    fun tidy(text: String, style: TranslationStyle, onResult: (Result) -> Unit) {
+        identifier.identifyLanguage(text)
+            .addOnSuccessListener { tag ->
+                val language = if (tag in INDONESIAN_LOOKALIKES) Language.INDONESIAN else Language.fromCode(tag) ?: Language.INDONESIAN
+                translateOnServer(Request(text, language, language, style, polish = true, explain = false), onResult)
+            }
+            .addOnFailureListener { onResult(Result.Error("Gagal mengenali bahasa")) }
+    }
+
+    private fun fetchReplies(request: Request, language: Language, notOnServer: String, onResult: (ReplyResult) -> Unit) {
+        integrity.token(sha256Hex(request.hashInput)) { token ->
+            thread(name = "replies") {
+                val result = try {
+                    val replies = postJson(request, token).getJSONArray("replies")
+                    val list = (0 until replies.length()).map { i ->
+                        val item = replies.getJSONObject(i)
+                        Reply(item.getString("text"), item.optString("meaning").takeIf { it.isNotBlank() })
+                    }
+                    if (list.isEmpty()) ReplyResult.Error("Belum ada hasil, coba lagi")
+                    else ReplyResult.Success(list, language)
+                } catch (e: ServerError) {
+                    // A server from before this feature turns the request down as invalid.
+                    ReplyResult.Error(if (e.status == 400) notOnServer else e.error.message)
+                } catch (e: org.json.JSONException) {
+                    ReplyResult.Error("Server terjemahan sedang bermasalah, coba lagi")
+                }
+                main.post { onResult(result) }
+            }
+        }
     }
 
     private data class Request(
@@ -120,11 +148,11 @@ class TextTranslator(context: Context) {
         val explain: Boolean,
         /** Sends only text, source and target, like app versions before styles, for a server not yet updated. */
         val legacy: Boolean = false,
-        /** Ask for replies to [text] instead of a translation. */
-        val reply: Boolean = false,
+        /** A mode other than translating or polishing: "reply" for replies to [text], "line" for AI lines. */
+        val special: String? = null,
     ) {
         val mode get() = when {
-            reply -> "reply"
+            special != null -> special
             polish -> "polish"
             else -> "translate"
         }

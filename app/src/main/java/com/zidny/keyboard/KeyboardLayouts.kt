@@ -18,6 +18,9 @@ sealed class Key(val weight: Float = 1f) {
     object Enter : Key(1.5f)
     object Left : Key(1f)
     object Right : Key(1f)
+    object Escape : Key(1f)
+    /** F1 to F12 on the PC layout. */
+    class Function(val number: Int) : Key(1f)
 }
 
 /** The letter arrangements the user can pick in the settings. */
@@ -37,9 +40,16 @@ object KeyboardLayouts {
         'y' to "ÿý", 'z' to "žźż",
     )
 
+    /** The symbol each letter offers when held, in the same places as on Gboard and Samsung keyboards. */
+    private val LETTER_SYMBOLS = mapOf(
+        'a' to "@", 's' to "#", 'd' to "$", 'f' to "%", 'g' to "&", 'h' to "-", 'j' to "+", 'k' to "(", 'l' to ")",
+        'z' to "*", 'x' to "\"", 'c' to "'", 'v' to ":", 'b' to ";", 'n' to "!", 'm' to "?",
+    )
+
     private const val PERIOD_ALTERNATES = "?!,;:'\"-…"
 
-    private fun row(chars: String): List<Key> = chars.map { Key.Char(it.toString(), alternates = ACCENTS[it] ?: "") }
+    private fun row(chars: String): List<Key> =
+        chars.map { Key.Char(it.toString(), alternates = (LETTER_SYMBOLS[it] ?: "") + (ACCENTS[it] ?: "")) }
 
     /** The top letter row: holding a key also offers the digit above it, like on Samsung keyboards. */
     private fun topRow(chars: String): List<Key> = chars.mapIndexed { i, c ->
@@ -78,6 +88,7 @@ object KeyboardLayouts {
             )
             // A PC keyboard always shows its number row, so the setting does not apply here.
             KeyboardLayout.DESKTOP -> return listOf(
+                listOf<Key>(Key.Escape) + (1..12).map { Key.Function(it) },
                 pcRow("`1234567890-=", "~!@#$%^&*()_+"),
                 listOf<Key>(Key.Tab) + row("qwertyuiop") + pcRow("[]\\", "{}|"),
                 listOf<Key>(Key.CapsLock) + row("asdfghjkl") + pcRow(";'", ":\""),

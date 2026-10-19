@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import worker, { checkVerdict, parseReplies, polish, polishPrompt, requestHashInput, sha256Hex, translate, translationPrompt, validate, verifyIntegrity } from "../src/index.js";
+import worker, { checkVerdict, linePrompt, parseReplies, polish, polishPrompt, requestHashInput, sha256Hex, translate, translationPrompt, validate, verifyIntegrity } from "../src/index.js";
 
 const PACKAGE = "com.zidny.keyboard";
 const NOW = 1_800_000_000_000;
@@ -186,4 +186,34 @@ test("worker returns reply suggestions in reply mode", async () => {
   });
   assert.match(seen[0].messages[0].content, /received this chat message in English/);
   assert.equal(requestHashInput(body), "v2|en|en|casual|reply|false|wanna grab dinner?");
+});
+
+test("validate accepts a line request only with a known mood", () => {
+  assert.equal(validate({ text: "romantic\nbuat pacar", source: "id", target: "id", mode: "line" }), null);
+  assert.equal(validate({ text: "roast\n", source: "en", target: "en", mode: "line" }), null);
+  assert.ok(validate({ text: "constructor\nx", source: "id", target: "id", mode: "line" }));
+  assert.ok(validate({ text: "evil\nsomeone", source: "id", target: "id", mode: "line" }));
+  assert.ok(validate({ text: "funny", source: "id", target: "id", mode: "line", explain: true }));
+});
+
+test("linePrompt asks for meanings unless the lines are Indonesian", () => {
+  assert.match(linePrompt("funny", "ja"), /Japanese/);
+  assert.match(linePrompt("funny", "ja"), /\|\|\|/);
+  assert.doesNotMatch(linePrompt("birthday", "id"), /\|\|\|/);
+});
+
+test("line mode returns lines from the chat model", async () => {
+  const env = {
+    REQUIRE_INTEGRITY: "false",
+    AI: { run: async () => ({ response: "Kamu cantik ||| You are pretty\nHalo ||| Hello\nHai ||| Hi" }) },
+  };
+  const request = new Request("https://x/translate", {
+    method: "POST",
+    body: JSON.stringify({ text: "romantic\n", source: "en", target: "en", mode: "line" }),
+  });
+  const response = await worker.fetch(request, env);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.replies.length, 3);
+  assert.equal(body.replies[0].meaning, "You are pretty");
 });

@@ -18,6 +18,8 @@ Languages: `id`, `en`, `fr`, `zh`, `ja`. Up to 2000 characters. Returns `{"text"
   (then `source` and `target` must be the same), or `reply` to suggest replies to a message received in
   `source`, written in `target`. Reply mode returns `{"replies": [{"text": "...", "meaning": "..."}]}` with
   three replies, each with its Indonesian `meaning` unless `target` is `id`; `explain` must be `false`.
+  `line` writes three ready-to-send lines in `target`, returned like `reply`: the first line of `text` is
+  the mood (`romantic`, `funny`, `roast`, `motivate`, `sorry` or `birthday`), the rest an optional topic.
 - `explain`: when `true`, `meaning` holds the result translated back into Indonesian (not when the target
   is Indonesian). It costs a second model call.
 

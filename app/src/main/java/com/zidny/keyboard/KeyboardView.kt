@@ -1,12 +1,15 @@
 package com.zidny.keyboard
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.media.AudioManager
 import android.os.Handler
@@ -62,12 +65,20 @@ class KeyboardView(
         fun onOpenSettings()
         /** The user tapped 🔍 to read the copied message in Indonesian before replying. */
         fun onReadCopied()
+        /** Text typed in the 文A translate box, to be translated into [target]; answer with [showBoxTranslation]. */
+        fun onTranslateBox(text: String, target: Language)
+        /** The user tapped 🪄 to tidy up what they typed, e.g. "km dmn" → "Kamu di mana?". */
+        fun onTidy()
+        /** The user picked a mood in the 🎭 panel; answer with [showLines]. */
+        fun onWriteLines(mood: LineMood, language: Language)
+        /** The user tapped one of the 🎭 lines to send it. */
+        fun onLinePicked(text: String)
     }
 
     enum class ShiftState { OFF, ON, LOCKED }
 
     /** What replaces the letter keys: nothing, or one of the panels opened from the toolbar. */
-    private enum class Panel { KEYS, PICKER, CLIPBOARD, EMOJI, CALCULATOR, REPLIES }
+    private enum class Panel { KEYS, PICKER, CLIPBOARD, EMOJI, CALCULATOR, REPLIES, TRANSLATOR, FONTS, KAOMOJI, LINES }
 
     private var panel = Panel.KEYS
     private var showSymbols = false
@@ -80,7 +91,28 @@ class KeyboardView(
     private var calcExpression = ""
     private val calcExpressionView = TextView(context)
     private val calcResultView = TextView(context)
+    // The 文A translate box: text typed into the box itself rather than the app, like Google Translate.
+    private var boxText = ""
+    private var boxTarget: Language? = null
+    private val boxInput = TextView(context)
+    private val boxResult = TextView(context)
+    private val boxNote = TextView(context)
+    private val boxTimer = Handler(Looper.getMainLooper())
+    private val translateBox = Runnable {
+        if (boxText.isNotBlank()) listener.onTranslateBox(boxText, boxTarget ?: pickedLanguage)
+    }
     private var pickedLanguage = Language.ENGLISH
+
+    /** The 𝓐 letter style everything is typed in, until set back to normal. */
+    private var fancyFont = FancyFont.NORMAL
+    val fancyActive get() = fancyFont != FancyFont.NORMAL
+    private var kaomojiCategory = 0
+
+    // The 🎭 panel: lines are null while they load, and empty after a failure explained in linesTitle.
+    private var linesMood: LineMood? = null
+    private var linesLanguage = Language.INDONESIAN
+    private var linesTitle = ""
+    private var lines: List<TextTranslator.Reply>? = null
     private var pickedStyle = TranslationStyle.CASUAL
 
     /** Shown under the choices in the language panel, e.g. that they are remembered for this app. */
@@ -89,7 +121,9 @@ class KeyboardView(
     private var lastShiftTap = 0L
     private val keyHandler = Handler(Looper.getMainLooper())
     private val density = resources.displayMetrics.density
-    private val theme = settings.theme
+    /** The theme drawn now: with the automatic theme on, it depends on the time the keyboard opened. */
+    val themeInUse = settings.themeAt(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY))
+    private val theme = themeInUse
     private val audio = context.getSystemService(AudioManager::class.java)
 
     /** Changing it relabels the keys in place: rebuilding them mid-typing drops a key that is still held. */
@@ -121,12 +155,18 @@ class KeyboardView(
         text = "↶"
         visibility = GONE
     }
-    private val micButton = iconButton("🎤") { listener.onVoice() }
-    private val emojiButton = iconButton("😊") { togglePanel(Panel.EMOJI) }
-    private val readButton = iconButton("🔍") { listener.onReadCopied() }
-    private val replyButton = iconButton("💬") { listener.onSuggestReplies() }
-    private val clipboardButton = iconButton("📋") { togglePanel(Panel.CLIPBOARD) }
-    private val calculatorButton = iconButton("🧮") { togglePanel(Panel.CALCULATOR) }
+    // Each tool can be switched off in the settings, so the toolbar holds only what the user wants.
+    private val micButton = iconButton("🎤") { listener.onVoice() }.shownIf(settings.toolMic)
+    private val emojiButton = iconButton("😊") { togglePanel(Panel.EMOJI) }.shownIf(settings.toolEmoji)
+    private val readButton = iconButton("🔍") { listener.onReadCopied() }.shownIf(settings.toolRead)
+    private val replyButton = iconButton("💬") { listener.onSuggestReplies() }.shownIf(settings.replySuggestions)
+    private val boxButton = iconButton("文A") { togglePanel(Panel.TRANSLATOR) }.shownIf(settings.toolTranslateBox)
+    private val clipboardButton = iconButton("📋") { togglePanel(Panel.CLIPBOARD) }.shownIf(settings.toolClipboard)
+    private val calculatorButton = iconButton("🧮") { togglePanel(Panel.CALCULATOR) }.shownIf(settings.toolCalculator)
+    private val fontButton = iconButton("𝓐") { togglePanel(Panel.FONTS) }.shownIf(settings.toolFonts)
+    private val kaomojiButton = iconButton("ツ") { togglePanel(Panel.KAOMOJI) }.shownIf(settings.toolKaomoji)
+    private val linesButton = iconButton("🎭") { togglePanel(Panel.LINES) }.shownIf(settings.toolLines)
+    private val tidyButton = iconButton("🪄") { listener.onTidy() }.shownIf(settings.toolTidy)
     private val settingsButton = iconButton("⚙️") { listener.onOpenSettings() }
 
     /** Toolbar buttons that open a panel, so the open one can be highlighted. */
@@ -136,6 +176,10 @@ class KeyboardView(
         Panel.CLIPBOARD to clipboardButton,
         Panel.CALCULATOR to calculatorButton,
         Panel.REPLIES to replyButton,
+        Panel.TRANSLATOR to boxButton,
+        Panel.FONTS to fontButton,
+        Panel.KAOMOJI to kaomojiButton,
+        Panel.LINES to linesButton,
     )
 
     /** Shown in the suggestion bar while there are no word suggestions. */
@@ -154,7 +198,10 @@ class KeyboardView(
         orientation = LinearLayout.HORIZONTAL
         val tools = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            listOf(languageButton, readButton, replyButton, emojiButton, clipboardButton, micButton, calculatorButton, settingsButton).forEach {
+            listOf(
+                languageButton, boxButton, readButton, replyButton, tidyButton, linesButton, emojiButton, kaomojiButton,
+                fontButton, clipboardButton, micButton, calculatorButton, settingsButton,
+            ).forEach {
                 addView(it, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
             }
         }
@@ -294,6 +341,7 @@ class KeyboardView(
         // Hidden with INVISIBLE rather than GONE: showing it again then needs no new layout pass.
         visibility = INVISIBLE
     }
+    private val effects = KeyEffectsView(context, theme.accent, theme.text)
     private val alternatesRow = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         background = rounded(theme.key)
@@ -308,7 +356,10 @@ class KeyboardView(
     private var spaceMoved = false
 
     init {
-        setBackgroundColor(if (settings.backgroundColor != 0) settings.backgroundColor else theme.background)
+        val photo = if (settings.backgroundImage) KeyboardBackground.load(context, settings.backgroundBlur, settings.backgroundDim) else null
+        if (photo != null) background = photo
+        else setBackgroundColor(if (settings.backgroundColor != 0) settings.backgroundColor else theme.background)
+        if (settings.sound && settings.soundStyle != SoundStyle.SYSTEM) TypingSounds.prepare(context)
         val pad = dp(4)
         setPadding(pad, pad, pad, pad)
         // Android 15+ draws the keyboard behind the navigation bar, so lift the keys above it, plus the
@@ -324,6 +375,7 @@ class KeyboardView(
             insets
         }
         addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        overlay.addView(effects, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         overlay.addView(preview, LayoutParams(0, 0))
         overlay.addView(alternatesRow, LayoutParams(LayoutParams.WRAP_CONTENT, 0))
         overlay.addView(messagePanel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
@@ -374,9 +426,11 @@ class KeyboardView(
 
     /** Back to the letter keys, e.g. when the keyboard closes, so it doesn't reopen on an old panel. */
     fun closePanels() {
-        if (panel == Panel.KEYS && !showSymbols) return
+        // A letter style is for one text, so it ends with it rather than following the user to the next app.
+        if (panel == Panel.KEYS && !showSymbols && fancyFont == FancyFont.NORMAL) return
         panel = Panel.KEYS
         showSymbols = false
+        fancyFont = FancyFont.NORMAL
         render()
     }
 
@@ -450,6 +504,8 @@ class KeyboardView(
         translateButton.alpha = if (busy) 0.5f else 1f
     }
 
+    private fun TextView.shownIf(shown: Boolean) = apply { visibility = if (shown) VISIBLE else GONE }
+
     private fun iconButton(icon: String, onClick: () -> Unit) = toolbarButton(onClick).apply {
         text = icon
         setPadding(dp(10), 0, dp(10), 0)
@@ -485,12 +541,21 @@ class KeyboardView(
             (button.background as GradientDrawable).setColor(if (open) theme.accent else theme.specialKey)
             button.setTextColor(if (open) Color.WHITE else theme.text)
         }
+        // A letter style stays on after its panel closes, so its button stays lit to show it.
+        if (panel != Panel.FONTS && fancyFont != FancyFont.NORMAL) {
+            (fontButton.background as GradientDrawable).setColor(theme.accent)
+            fontButton.setTextColor(Color.WHITE)
+        }
         when (panel) {
             Panel.PICKER -> return renderPicker()
             Panel.CLIPBOARD -> return renderClipboard()
             Panel.EMOJI -> return renderEmoji()
             Panel.CALCULATOR -> return renderCalculator()
             Panel.REPLIES -> return renderReplies()
+            Panel.TRANSLATOR -> renderTranslateBox()
+            Panel.FONTS -> return renderFonts()
+            Panel.KAOMOJI -> return renderKaomoji()
+            Panel.LINES -> return renderLines()
             Panel.KEYS -> {}
         }
         val layout = if (showSymbols) KeyboardLayouts.symbols else KeyboardLayouts.letters(settings.layout, settings.numberRow)
@@ -498,8 +563,130 @@ class KeyboardView(
         for (keys in layout) {
             val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
             for (key in keys) row.addView(createKey(key))
-            addShrinkable(row, rowHeight)
+            // The F1–F12 row of the PC layout is lower than the letter rows.
+            addShrinkable(row, if (keys.first() == Key.Escape) rowHeight * 3 / 4 else rowHeight)
         }
+    }
+
+    /**
+     * A box above the keys that the keys type into instead of the app. What is typed is translated as the
+     * user pauses, like Google Translate, and can be copied or typed into the app.
+     */
+    private fun renderTranslateBox() {
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val target = boxTarget ?: pickedLanguage
+            addView(toolbarButton {
+                // Tapping steps through the languages.
+                val all = Language.entries
+                boxTarget = all[(all.indexOf(target) + 1) % all.size]
+                render()
+                scheduleBoxTranslation(0)
+            }.apply { text = "Otomatis → ${target.flag} ${target.displayName}" },
+                LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).withMargins())
+            addView(toolbarButton {
+                boxText = ""
+                showBoxInput()
+                showBoxTranslation("", "", "")
+            }.apply { text = "🗑" }, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        }
+        content.addView(header, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = rounded(theme.key)
+            (boxInput.parent as? LinearLayout)?.removeView(boxInput)
+            (boxResult.parent as? LinearLayout)?.removeView(boxResult)
+            (boxNote.parent as? LinearLayout)?.removeView(boxNote)
+            addView(boxInput.apply {
+                setTextColor(theme.text)
+                setHintTextColor(theme.secondaryText)
+                hint = "Ketik teks yang mau diterjemahkan…"
+                textSize = 16f
+                maxLines = 2
+            })
+            addView(boxNote.apply {
+                setTextColor(theme.secondaryText)
+                textSize = 11f
+                maxLines = 1
+            })
+            addView(ScrollView(context).apply {
+                addView(boxResult.apply {
+                    setTextColor(theme.accent)
+                    textSize = 17f
+                })
+            }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+        content.addView(box, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).withMargins())
+        showBoxInput()
+
+        val actions = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(toolbarButton {
+                val text = boxResult.text.toString()
+                if (text.isNotEmpty()) {
+                    context.getSystemService(ClipboardManager::class.java)
+                        ?.setPrimaryClip(ClipData.newPlainText("Terjemahan", text))
+                    boxNote.text = "Hasil disalin"
+                }
+            }.apply { text = "📋 Salin" }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).withMargins())
+            addView(toolbarButton {
+                val text = boxResult.text.toString()
+                if (text.isNotEmpty()) {
+                    listener.onText(text)
+                    boxText = ""
+                    showBoxTranslation("", "", "")
+                    panel = Panel.KEYS
+                    render()
+                }
+            }.apply {
+                text = "Ketik ke chat"
+                setTextColor(Color.WHITE)
+                (background as GradientDrawable).setColor(theme.accent)
+            }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).withMargins())
+        }
+        content.addView(actions, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+    }
+
+    /** Shows the translation of [forText] in the 文A box, unless the user has typed on since. */
+    fun showBoxTranslation(forText: String, result: String, note: String) {
+        if (forText != boxText) return
+        boxResult.text = result
+        boxNote.text = note
+    }
+
+    private fun scheduleBoxTranslation(delay: Long = BOX_DELAY_MS) {
+        boxTimer.removeCallbacks(translateBox)
+        if (boxText.isBlank()) showBoxTranslation(boxText, "", "")
+        else boxTimer.postDelayed(translateBox, delay)
+    }
+
+    /** Types [text] into the 文A box when it is open, otherwise into the app. */
+    private fun type(text: String) {
+        if (panel != Panel.TRANSLATOR) return listener.onText(fancyFont.apply(text))
+        boxText += text
+        showBoxInput()
+        scheduleBoxTranslation()
+    }
+
+    private fun deleteOne() {
+        if (panel != Panel.TRANSLATOR) return listener.onDelete()
+        if (boxText.isEmpty()) return
+        // Remove a whole emoji or accented letter, not half of it.
+        val end = boxText.length
+        val start = java.text.BreakIterator.getCharacterInstance().run {
+            setText(boxText)
+            preceding(end).coerceAtLeast(0)
+        }
+        boxText = boxText.substring(0, start)
+        showBoxInput()
+        scheduleBoxTranslation()
+    }
+
+    /** The end of a long text is what the user is typing, so that is the part kept in view. */
+    private fun showBoxInput() {
+        boxInput.text = if (boxText.length > BOX_VISIBLE_CHARS) "…" + boxText.takeLast(BOX_VISIBLE_CHARS) else boxText
     }
 
     private fun addShrinkable(view: View, height: Int) {
@@ -515,6 +702,7 @@ class KeyboardView(
     override fun onDetachedFromWindow() {
         stopKeyRepeat()
         toolbarTimer.removeCallbacksAndMessages(null)
+        boxTimer.removeCallbacksAndMessages(null)
         super.onDetachedFromWindow()
     }
 
@@ -713,6 +901,202 @@ class KeyboardView(
 
     private fun isSpecial(key: Key) = key !is Key.Char || key.value in listOf(",", ".", "@")
 
+    /** The height panels get in place of the letter rows, minus [header] above them. */
+    private fun panelHeight(header: Int): Int {
+        val letterRows = KeyboardLayouts.letters(settings.layout, settings.numberRow).size
+        return (keyRowHeight() * (letterRows - 1) - header).coerceAtLeast(dp(120))
+    }
+
+    private fun bottomKeys() = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        listOf(Key.Letters, Key.Space, Key.Delete).forEach { addView(createKey(it)) }
+    }
+
+    /** Letter styles: picking one types everything in it until Normal is picked again. */
+    private fun renderFonts() {
+        content.addView(caption("Gaya huruf · berlaku sampai kamu pilih Normal lagi"), LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(32)))
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        FancyFont.entries.chunked(2).forEach { pair ->
+            grid.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                pair.forEach { font ->
+                    addView(toolbarButton {
+                        fancyFont = font
+                        panel = Panel.KEYS
+                        render()
+                    }.apply {
+                        text = font.sample
+                        textSize = 16f
+                        if (font == fancyFont) {
+                            setTextColor(Color.WHITE)
+                            (background as GradientDrawable).setColor(theme.accent)
+                        }
+                    }, LinearLayout.LayoutParams(0, dp(44), 1f).withMargins())
+                }
+                if (pair.size == 1) addView(View(context), LinearLayout.LayoutParams(0, dp(44), 1f))
+            })
+        }
+        addShrinkable(ScrollView(context).apply { addView(grid) }, panelHeight(dp(32)))
+        addShrinkable(bottomKeys(), keyRowHeight())
+    }
+
+    /** Text faces like (◕‿◕), grouped by feeling. */
+    private fun renderKaomoji() {
+        val tabs = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        Kaomoji.categories.forEachIndexed { index, (name, _) ->
+            tabs.addView(TextView(context).apply {
+                gravity = Gravity.CENTER
+                textSize = 12f
+                text = name
+                setTextColor(if (index == kaomojiCategory) Color.WHITE else theme.text)
+                background = rounded(if (index == kaomojiCategory) theme.accent else theme.specialKey)
+                setOnClickListener {
+                    kaomojiCategory = index
+                    render()
+                }
+            }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).withMargins())
+        }
+        content.addView(tabs, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        Kaomoji.categories[kaomojiCategory].second.chunked(3).forEach { line ->
+            grid.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                for (i in 0 until 3) {
+                    val face = line.getOrNull(i)
+                    addView(TextView(context).apply {
+                        gravity = Gravity.CENTER
+                        textSize = 15f
+                        setTextColor(theme.text)
+                        text = face ?: ""
+                        if (face != null) {
+                            background = rounded(seeThrough(theme.key))
+                            setOnClickListener {
+                                tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+                                listener.onText(face)
+                            }
+                        }
+                    }, LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).withMargins().apply { height = dp(44) })
+                }
+            })
+        }
+        addShrinkable(ScrollView(context).apply { addView(grid) }, panelHeight(dp(40)))
+        addShrinkable(bottomKeys(), keyRowHeight())
+    }
+
+    /** AI-written lines to send: pick a mood (and optionally type a topic first), then tap a line. */
+    private fun renderLines() {
+        val moods = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        LineMood.entries.chunked(3).forEach { row ->
+            moods.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                row.forEach { mood ->
+                    addView(toolbarButton {
+                        linesMood = mood
+                        lines = null
+                        render()
+                        listener.onWriteLines(mood, linesLanguage)
+                    }.apply {
+                        text = mood.label
+                        textSize = 13f
+                        setPadding(dp(4), 0, dp(4), 0)
+                        if (mood == linesMood) {
+                            setTextColor(Color.WHITE)
+                            (background as GradientDrawable).setColor(theme.accent)
+                        }
+                    }, LinearLayout.LayoutParams(0, dp(38), 1f).withMargins())
+                }
+            })
+        }
+        content.addView(moods)
+
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val mood = linesMood
+        when {
+            mood == null -> list.addView(note("Pilih gaya di atas. Mau lebih pas? Ketik dulu untuk siapa atau topiknya (misal \"pacar suka kopi\"), lalu pilih gaya."))
+            lines == null -> list.addView(note("Lagi mikir kata-kata ${mood.label}…"))
+            lines.isNullOrEmpty() -> list.addView(note(linesTitle))
+            else -> addReplyItems(list, lines.orEmpty()) { listener.onLinePicked(it) }
+        }
+        addShrinkable(ScrollView(context).apply { addView(list) }, panelHeight(dp(88)))
+
+        val bottom = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        bottom.addView(createKey(Key.Letters))
+        bottom.addView(toolbarButton {
+            // Steps through the languages the lines are written in.
+            val all = Language.entries
+            linesLanguage = all[(all.indexOf(linesLanguage) + 1) % all.size]
+            render()
+        }.apply { text = "${linesLanguage.flag} ${linesLanguage.displayName}" },
+            LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 2f).withMargins())
+        bottom.addView(toolbarButton {
+            val current = linesMood ?: return@toolbarButton
+            lines = null
+            render()
+            listener.onWriteLines(current, linesLanguage)
+        }.apply { text = "🔄 Lagi" }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1.5f).withMargins())
+        addShrinkable(bottom, keyRowHeight())
+    }
+
+    /** Shows the lines written for [mood], or [error] when there are none. Ignored once the user moved on. */
+    fun showLines(mood: LineMood, result: List<TextTranslator.Reply>, error: String = "") {
+        if (panel != Panel.LINES || mood != linesMood) return
+        lines = result
+        linesTitle = error
+        render()
+    }
+
+    /** Back to the keys after a line was sent. */
+    fun closeLines() {
+        if (panel == Panel.LINES) {
+            panel = Panel.KEYS
+            render()
+        }
+    }
+
+    private fun caption(text: String) = TextView(context).apply {
+        this.text = text
+        setTextColor(theme.secondaryText)
+        textSize = 12f
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(8), 0, dp(8), 0)
+    }
+
+    private fun note(text: String) = TextView(context).apply {
+        this.text = text
+        setTextColor(theme.secondaryText)
+        textSize = 14f
+        gravity = Gravity.CENTER
+        setPadding(dp(16), dp(20), dp(16), dp(20))
+    }
+
+    /** Cards for replies or lines: the text, its meaning underneath, and [onPick] on a tap. */
+    private fun addReplyItems(list: LinearLayout, items: List<TextTranslator.Reply>, onPick: (String) -> Unit) {
+        items.forEach { reply ->
+            list.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                background = rounded(seeThrough(theme.key))
+                addView(TextView(context).apply {
+                    text = reply.text
+                    setTextColor(theme.text)
+                    textSize = 16f
+                })
+                reply.meaning?.let { meaning ->
+                    addView(TextView(context).apply {
+                        text = meaning
+                        setTextColor(theme.secondaryText)
+                        textSize = 13f
+                    })
+                }
+                setOnClickListener {
+                    tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+                    onPick(reply.text)
+                }
+            }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).withMargins())
+        }
+    }
+
     /** Suggested replies to the copied message: tap one to type it. */
     private fun renderReplies() {
         val rowHeight = keyRowHeight()
@@ -737,30 +1121,10 @@ class KeyboardView(
                 setPadding(dp(16), dp(24), dp(16), dp(24))
             })
         }
-        current?.forEach { reply ->
-            list.addView(LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), dp(8), dp(12), dp(8))
-                background = rounded(theme.key)
-                addView(TextView(context).apply {
-                    text = reply.text
-                    setTextColor(theme.text)
-                    textSize = 16f
-                })
-                reply.meaning?.let { meaning ->
-                    addView(TextView(context).apply {
-                        text = meaning
-                        setTextColor(theme.secondaryText)
-                        textSize = 13f
-                    })
-                }
-                setOnClickListener {
-                    tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
-                    listener.onText(reply.text)
-                    panel = Panel.KEYS
-                    render()
-                }
-            }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).withMargins())
+        addReplyItems(list, current.orEmpty()) { text ->
+            listener.onText(text)
+            panel = Panel.KEYS
+            render()
         }
         val letterRows = KeyboardLayouts.letters(settings.layout, settings.numberRow).size
         addShrinkable(ScrollView(context).apply { addView(list) }, (rowHeight * (letterRows - 1) - dp(40)).coerceAtLeast(dp(120)))
@@ -865,11 +1229,14 @@ class KeyboardView(
         calcResultView.text = if (result != null && result != calcExpression) "= $result" else ""
     }
 
-    private fun colorFor(key: Key) = when {
+    private fun colorFor(key: Key) = seeThrough(when {
         key == Key.CapsLock && shiftState == ShiftState.LOCKED -> theme.accent
         isSpecial(key) -> theme.specialKey
         else -> theme.key
-    }
+    })
+
+    /** Over a photo the keys let a little of it show through. */
+    private fun seeThrough(color: Int) = if (settings.backgroundImage) ColorUtils.setAlphaComponent(color, 215) else color
 
     private fun applyLabel(view: TextView, key: Key) {
         val label = labelFor(key)
@@ -918,22 +1285,23 @@ class KeyboardView(
     @SuppressLint("ClickableViewAccessibility")
     private fun createKey(key: Key): TextView {
         val (background, drawable) = keyBackground(colorFor(key))
+        // Half the gap on each side gives the chosen space between neighbouring keys. The gap is drawn as an
+        // inset rather than a margin, so a tap that lands between two keys still presses the nearer one
+        // instead of being lost.
+        val margin = (settings.keyGap * density / 2).toInt()
         val view = TextView(context).apply {
             styleKeyText(this)
-            this.background = background
+            this.background = if (margin > 0) InsetDrawable(background, margin) else background
             tag = drawable
+            setPadding(paddingLeft + margin, paddingTop + margin, paddingRight + margin, paddingBottom + margin)
         }
         applyLabel(view, key)
         keyViews.add(key to view)
-        // Half the gap on each side gives the chosen space between neighbouring keys.
-        val margin = (settings.keyGap * density / 2).toInt()
-        val lp = LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, key.weight)
-        lp.setMargins(margin, margin, margin, margin)
-        view.layoutParams = lp
+        view.layoutParams = LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, key.weight)
 
         val repeatDelete = object : Runnable {
             override fun run() {
-                listener.onDelete()
+                deleteOne()
                 keyHandler.postDelayed(this, 60)
             }
         }
@@ -944,9 +1312,13 @@ class KeyboardView(
                 MotionEvent.ACTION_DOWN -> {
                     drawable.setColor(ColorUtils.blendARGB(colorFor(key), theme.text, 0.18f))
                     tapFeedback(v, soundFor(key))
+                    if (settings.keyEffect != KeyEffect.NONE) {
+                        val (left, top) = positionOf(v)
+                        effects.play(settings.keyEffect, left + v.width / 2f, top + v.height / 2f, v.height)
+                    }
                     when (key) {
                         Key.Delete -> {
-                            listener.onDelete()
+                            deleteOne()
                             keyHandler.postDelayed(repeatDelete, settings.longPressMs.toLong())
                         }
                         Key.Space -> {
@@ -955,7 +1327,7 @@ class KeyboardView(
                         }
                         is Key.Char -> {
                             if (settings.keyPreview) showPreview(v, labelFor(key))
-                            if (key.alternates.isNotEmpty()) keyHandler.postDelayed(showAlternates, settings.longPressMs.toLong())
+                            if (key.alternates.isNotEmpty() || isLetter(key)) keyHandler.postDelayed(showAlternates, settings.longPressMs.toLong())
                         }
                         else -> {}
                     }
@@ -968,7 +1340,7 @@ class KeyboardView(
                     finishPress(drawable, colorFor(key), repeatDelete, showAlternates)
                     when {
                         alternates.isNotEmpty() -> {
-                            listener.onText(alternates[selectedAlternate])
+                            type(alternates[selectedAlternate])
                             if (shiftState == ShiftState.ON) shiftState = ShiftState.OFF
                         }
                         key == Key.Delete -> {}
@@ -1033,10 +1405,21 @@ class KeyboardView(
     private fun typedValue(key: Key.Char): String =
         if (shiftState != ShiftState.OFF && !showSymbols) key.shifted ?: key.value.uppercase() else key.value
 
+    private fun isLetter(key: Key.Char) = key.value.length == 1 && key.value[0].isLetter()
+
     private fun openAlternates(key: View, k: Key.Char) {
         val upper = shiftState != ShiftState.OFF && !showSymbols
-        alternates = (listOf(typedValue(k)) + k.alternates.map { if (upper) it.uppercase() else it.toString() }).distinct()
-        selectedAlternate = 1.coerceAtMost(alternates.size - 1)
+        alternates = if (isLetter(k) && !showSymbols) {
+            // A letter offers the other case first (a while A is showing, A while a is), then its symbol or
+            // digit, then its accented forms in the case that is showing.
+            val other = if (upper) k.value.lowercase() else k.value.uppercase()
+            val accents = k.alternates.filter { it.isLetter() }.map { if (upper) it.uppercase() else it.toString() }
+            val symbols = k.alternates.filterNot { it.isLetter() }.map { it.toString() }
+            (listOf(other) + symbols + accents).distinct()
+        } else {
+            (listOf(typedValue(k)) + k.alternates.map { if (upper) it.uppercase() else it.toString() }).distinct()
+        }
+        selectedAlternate = if (isLetter(k) && !showSymbols) 0 else 1.coerceAtMost(alternates.size - 1)
         preview.visibility = INVISIBLE
         if (settings.vibrate) key.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
 
@@ -1101,12 +1484,14 @@ class KeyboardView(
         Key.Enter -> enterLabel
         Key.Left -> "←"
         Key.Right -> "→"
+        Key.Escape -> "Esc"
+        is Key.Function -> "F${key.number}"
     }
 
     private fun onKey(key: Key) {
         when (key) {
             is Key.Char -> {
-                listener.onText(typedValue(key))
+                type(typedValue(key))
                 if (shiftState == ShiftState.ON) shiftState = ShiftState.OFF
             }
             Key.Shift -> {
@@ -1122,12 +1507,19 @@ class KeyboardView(
             Key.Tab -> listener.onKeyCode(KeyEvent.KEYCODE_TAB)
             Key.Left -> listener.onKeyCode(KeyEvent.KEYCODE_DPAD_LEFT)
             Key.Right -> listener.onKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT)
-            Key.Delete -> listener.onDelete()
+            Key.Delete -> deleteOne()
+            Key.Escape -> listener.onKeyCode(KeyEvent.KEYCODE_ESCAPE)
+            is Key.Function -> listener.onKeyCode(KeyEvent.KEYCODE_F1 + key.number - 1)
             Key.Symbols -> { showSymbols = true; render() }
-            Key.Letters -> { showSymbols = false; panel = Panel.KEYS; render() }
+            Key.Letters -> {
+                showSymbols = false
+                // In the translate box ABC only leaves the symbols; elsewhere it goes back to the keys.
+                if (panel != Panel.TRANSLATOR) panel = Panel.KEYS
+                render()
+            }
             Key.Emoji -> { panel = Panel.EMOJI; render() }
-            Key.Space -> listener.onText(" ")
-            Key.Enter -> listener.onEnter()
+            Key.Space -> type(" ")
+            Key.Enter -> if (panel == Panel.TRANSLATOR) scheduleBoxTranslation(0) else listener.onEnter()
         }
     }
 
@@ -1140,7 +1532,9 @@ class KeyboardView(
 
     private fun tapFeedback(view: View, sound: Int) {
         if (settings.vibrate) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-        if (settings.sound) audio?.playSoundEffect(sound, -1f)
+        if (!settings.sound) return
+        val big = sound != AudioManager.FX_KEYPRESS_STANDARD
+        if (settings.soundStyle == SoundStyle.SYSTEM || !TypingSounds.play(settings.soundStyle, big)) audio?.playSoundEffect(sound, -1f)
     }
 
     private fun dp(value: Int) = (value * density).toInt()
@@ -1155,6 +1549,8 @@ class KeyboardView(
         const val LANDSCAPE_ROW_DP = 40
         const val KEY_EDGE_DP = 3
         const val TOOLBAR_SHOW_MS = 3000L
+        const val BOX_DELAY_MS = 700L
+        const val BOX_VISIBLE_CHARS = 90
         const val EMOJI_COLUMNS = 8
     }
 }
