@@ -153,7 +153,33 @@ data class KeyboardSettings(
     val replySuggestions: Boolean = false,
     /** An animation where a key is pressed, besides the enlarged letter. */
     val keyEffect: KeyEffect = KeyEffect.NONE,
+    // Toolbar buttons, each switchable so everyone keeps only what they use.
+    val toolTranslateBox: Boolean = true,
+    val toolRead: Boolean = true,
+    val toolEmoji: Boolean = true,
+    val toolClipboard: Boolean = true,
+    val toolMic: Boolean = true,
+    val toolCalculator: Boolean = true,
+    val toolFonts: Boolean = false,
+    val toolKaomoji: Boolean = false,
+    val toolLines: Boolean = false,
+    val toolTidy: Boolean = false,
+    /** A photo from the gallery behind the keys, darkened by [backgroundDim] and blurred by [backgroundBlur] percent. */
+    val backgroundImage: Boolean = false,
+    val backgroundDim: Int = 30,
+    val backgroundBlur: Int = 20,
+    /** Changes whenever a new photo is picked, so the keyboard reloads it. */
+    val backgroundStamp: Long = 0,
+    /** Use [nightTheme] from 18:00 to 06:00 and [theme] during the day. */
+    val autoTheme: Boolean = false,
+    val nightTheme: KeyboardTheme = KeyboardTheme.SAMSUNG_DARK,
+    val soundStyle: SoundStyle = SoundStyle.SYSTEM,
+    /** Expand the user's own abbreviations, see [TextShortcuts]. */
+    val shortcuts: Boolean = true,
 ) {
+    /** The theme to show at [hour] (0–23). */
+    fun themeAt(hour: Int): KeyboardTheme = if (autoTheme && (hour < 6 || hour >= 18)) nightTheme else theme
+
     companion object {
         const val MIN_HEIGHT = 70
         const val MAX_HEIGHT = 140
@@ -168,6 +194,9 @@ data class KeyboardSettings(
 
         /** The preferences file; the keyboard watches it to apply changes straight away. */
         const val PREFS = "settings"
+
+        /** The photo picked for behind the keys. */
+        const val BACKGROUND_FILE = "keyboard_background.jpg"
 
         fun load(context: Context): KeyboardSettings {
             val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -197,6 +226,24 @@ data class KeyboardSettings(
                 autoHideToolbar = p.getBoolean("auto_hide_toolbar", defaults.autoHideToolbar),
                 replySuggestions = p.getBoolean("reply_suggestions", defaults.replySuggestions),
                 keyEffect = KeyEffect.entries.firstOrNull { it.name == p.getString("key_effect", null) } ?: defaults.keyEffect,
+                toolTranslateBox = p.getBoolean("tool_translate_box", defaults.toolTranslateBox),
+                toolRead = p.getBoolean("tool_read", defaults.toolRead),
+                toolEmoji = p.getBoolean("tool_emoji", defaults.toolEmoji),
+                toolClipboard = p.getBoolean("tool_clipboard", defaults.toolClipboard),
+                toolMic = p.getBoolean("tool_mic", defaults.toolMic),
+                toolCalculator = p.getBoolean("tool_calculator", defaults.toolCalculator),
+                toolFonts = p.getBoolean("tool_fonts", defaults.toolFonts),
+                toolKaomoji = p.getBoolean("tool_kaomoji", defaults.toolKaomoji),
+                toolLines = p.getBoolean("tool_lines", defaults.toolLines),
+                toolTidy = p.getBoolean("tool_tidy", defaults.toolTidy),
+                backgroundImage = p.getBoolean("background_image", defaults.backgroundImage),
+                backgroundDim = p.getInt("background_dim", defaults.backgroundDim).coerceIn(0, 90),
+                backgroundBlur = p.getInt("background_blur", defaults.backgroundBlur).coerceIn(0, 100),
+                backgroundStamp = p.getLong("background_stamp", defaults.backgroundStamp),
+                autoTheme = p.getBoolean("auto_theme", defaults.autoTheme),
+                nightTheme = KeyboardTheme.entries.firstOrNull { it.name == p.getString("night_theme", null) } ?: defaults.nightTheme,
+                soundStyle = SoundStyle.entries.firstOrNull { it.name == p.getString("sound_style", null) } ?: defaults.soundStyle,
+                shortcuts = p.getBoolean("shortcuts", defaults.shortcuts),
                 backgroundColor = p.getInt("background_color", defaults.backgroundColor),
             )
         }
@@ -227,6 +274,24 @@ data class KeyboardSettings(
                 .putBoolean("auto_hide_toolbar", settings.autoHideToolbar)
                 .putBoolean("reply_suggestions", settings.replySuggestions)
                 .putString("key_effect", settings.keyEffect.name)
+                .putBoolean("tool_translate_box", settings.toolTranslateBox)
+                .putBoolean("tool_read", settings.toolRead)
+                .putBoolean("tool_emoji", settings.toolEmoji)
+                .putBoolean("tool_clipboard", settings.toolClipboard)
+                .putBoolean("tool_mic", settings.toolMic)
+                .putBoolean("tool_calculator", settings.toolCalculator)
+                .putBoolean("tool_fonts", settings.toolFonts)
+                .putBoolean("tool_kaomoji", settings.toolKaomoji)
+                .putBoolean("tool_lines", settings.toolLines)
+                .putBoolean("tool_tidy", settings.toolTidy)
+                .putBoolean("background_image", settings.backgroundImage)
+                .putInt("background_dim", settings.backgroundDim)
+                .putInt("background_blur", settings.backgroundBlur)
+                .putLong("background_stamp", settings.backgroundStamp)
+                .putBoolean("auto_theme", settings.autoTheme)
+                .putString("night_theme", settings.nightTheme.name)
+                .putString("sound_style", settings.soundStyle.name)
+                .putBoolean("shortcuts", settings.shortcuts)
                 .putInt("background_color", settings.backgroundColor)
                 .apply()
         }

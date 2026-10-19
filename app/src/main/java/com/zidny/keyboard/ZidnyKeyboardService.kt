@@ -33,6 +33,12 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     private lateinit var style: TranslationStyle
     private var settings = KeyboardSettings()
 
+    /** The user's abbreviations, reloaded each time the keyboard opens so edits in the settings apply. */
+    private var shortcuts = TextShortcuts(emptyList())
+
+    /** What was typed as the topic for the 🎭 lines, replaced by the line the user picks. */
+    private var lineTopic = ""
+
     /** Loaded in the background when the service starts; null until then. */
     @Volatile private var predictor: WordPredictor? = null
 
@@ -110,8 +116,12 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        // Rebuild the keys if the user changed size or theme in the settings screen.
-        if (KeyboardSettings.load(this) != settings) setInputView(onCreateInputView())
+        // Rebuild the keys if the user changed the settings, or the automatic theme turned day or night.
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        if (KeyboardSettings.load(this) != settings || keyboardView?.themeInUse != settings.themeAt(hour)) {
+            setInputView(onCreateInputView())
+        }
+        shortcuts = TextShortcuts.decode(getSharedPreferences(TextShortcuts.PREFS, MODE_PRIVATE).getString(TextShortcuts.KEY, null))
         keyboardView?.enterLabel = enterLabelFor(info)
         lastCorrection = null
         restoreAppLanguage(info.packageName)
@@ -203,6 +213,47 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    override fun onTidy() {
+        val ic = currentInputConnection ?: return
+        val view = keyboardView ?: return
+        val original = currentText() ?: return
+        if (original.isBlank()) {
+            view.setStatus("Ketik dulu kalimatnya, lalu tekan 🪄")
+            return
+        }
+        view.setTranslating(true)
+        view.setStatus("Merapikan tulisan…")
+        translator.tidy(original, style) { result ->
+            view.setTranslating(false)
+            when (result) {
+                is TextTranslator.Result.Success -> replaceAll(ic, original, result.text, "Dirapikan · ${style.displayName}")
+                is TextTranslator.Result.AlreadyInTarget -> view.setStatus("Tulisan sudah rapi")
+                is TextTranslator.Result.Error -> view.setStatus(result.message)
+            }
+        }
+    }
+
+    override fun onWriteLines(mood: LineMood, language: Language) {
+        val view = keyboardView ?: return
+        // What the user typed before opening the panel tells who or what the lines are about.
+        lineTopic = currentText()?.takeIf { it.isNotBlank() && it.length <= MAX_TOPIC_CHARS } ?: ""
+        translator.suggestLines(mood, lineTopic, language, style) { result ->
+            when (result) {
+                is TextTranslator.ReplyResult.Success -> view.showLines(mood, result.replies)
+                is TextTranslator.ReplyResult.Error -> view.showLines(mood, emptyList(), result.message)
+            }
+        }
+    }
+
+    override fun onLinePicked(text: String) {
+        val ic = currentInputConnection ?: return
+        val topic = lineTopic
+        if (topic.isNotEmpty() && currentText() == topic) replaceAll(ic, topic, text, "Kata-kata 🎭")
+        else onText(text)
+        lineTopic = ""
+        keyboardView?.closeLines()
+    }
+
     override fun onTranslateBox(text: String, target: Language) {
         val view = keyboardView ?: return
         view.showBoxTranslation(text, "", "Menerjemahkan…")
@@ -267,7 +318,16 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         // Reading the field asks the app and can stall when it is busy, so plain letters skip it.
         val before = if (separator) ic.getTextBeforeCursor(WORD_LOOKBACK, 0) ?: "" else ""
         ic.beginBatchEdit()
-        if (separator) finishWord(currentWord(before), text)
+        // A shortcut like "ttd" becomes its full text; otherwise the word may be corrected. Styled 𝓐 letters
+        // are left alone.
+        val expansion = if (separator && settings.shortcuts) shortcuts.expand(before) else null
+        if (expansion != null) {
+            ic.deleteSurroundingText(expansion.first, 0)
+            ic.commitText(expansion.second, 1)
+            lastCorrection = null
+        } else if (separator && keyboardView?.fancyActive != true) {
+            finishWord(currentWord(before), text)
+        }
         if (text == " " && settings.doubleSpacePeriod && SentenceRules.shouldAddPeriod(before)) {
             ic.deleteSurroundingText(1, 0)
             ic.commitText(". ", 1)
@@ -742,6 +802,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         const val MAX_USER_WORDS = 3000
         const val WORD_LOOKBACK = 48
         const val WORD_SEPARATORS = " .,!?;:"
+        const val MAX_TOPIC_CHARS = 200
         val NO_CAPS_VARIATIONS = setOf(
             InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
