@@ -39,7 +39,75 @@ enum class KeyboardTheme(
         Color.parseColor("#FBE9EF"), Color.parseColor("#FFFFFF"), Color.parseColor("#F4C9D6"),
         Color.parseColor("#3A2430"), Color.parseColor("#8A6573"), Color.parseColor("#E0628C"), 12,
     ),
+    MINT(
+        "Hijau Mint",
+        Color.parseColor("#DFF3EA"), Color.parseColor("#FFFFFF"), Color.parseColor("#B8E3CF"),
+        Color.parseColor("#163A2C"), Color.parseColor("#4E7A68"), Color.parseColor("#1FA971"), 10,
+    ),
+    LAVENDER(
+        "Ungu Lavender",
+        Color.parseColor("#ECE6FA"), Color.parseColor("#FFFFFF"), Color.parseColor("#D3C7F2"),
+        Color.parseColor("#2B2140"), Color.parseColor("#6E6390"), Color.parseColor("#7C5CE0"), 12,
+    ),
+    SUNSET(
+        "Senja Oranye",
+        Color.parseColor("#FFE8D6"), Color.parseColor("#FFFFFF"), Color.parseColor("#FFC9A3"),
+        Color.parseColor("#3D2314"), Color.parseColor("#8A5B3F"), Color.parseColor("#F26B1D"), 10,
+    ),
+    LEMON(
+        "Kuning Lemon",
+        Color.parseColor("#FFF6C7"), Color.parseColor("#FFFFFF"), Color.parseColor("#F5E38A"),
+        Color.parseColor("#3A3410"), Color.parseColor("#7D7340"), Color.parseColor("#D9A400"), 10,
+    ),
+    SKY(
+        "Biru Langit",
+        Color.parseColor("#DCEEFF"), Color.parseColor("#FFFFFF"), Color.parseColor("#B5D8FA"),
+        Color.parseColor("#13304D"), Color.parseColor("#4F6F8F"), Color.parseColor("#1E88E5"), 10,
+    ),
+    TOSCA(
+        "Tosca",
+        Color.parseColor("#0E3B3A"), Color.parseColor("#17605E"), Color.parseColor("#124B4A"),
+        Color.WHITE, Color.parseColor("#A6D6D3"), Color.parseColor("#2EC4B6"), 10,
+    ),
+    MAROON(
+        "Merah Marun",
+        Color.parseColor("#3B0F17"), Color.parseColor("#6A1F2B"), Color.parseColor("#531824"),
+        Color.WHITE, Color.parseColor("#E0AAB3"), Color.parseColor("#FF4D6D"), 10,
+    ),
+    FOREST(
+        "Hijau Hutan",
+        Color.parseColor("#13261A"), Color.parseColor("#24452F"), Color.parseColor("#1B3524"),
+        Color.WHITE, Color.parseColor("#A9C9B2"), Color.parseColor("#4CAF50"), 10,
+    ),
+    COFFEE(
+        "Kopi",
+        Color.parseColor("#2B1E17"), Color.parseColor("#4A372B"), Color.parseColor("#3A2B21"),
+        Color.parseColor("#F5E9DD"), Color.parseColor("#C4AE9A"), Color.parseColor("#D4A373"), 10,
+    ),
+    GALAXY(
+        "Galaksi Ungu",
+        Color.parseColor("#1A1033"), Color.parseColor("#2E2057"), Color.parseColor("#241847"),
+        Color.WHITE, Color.parseColor("#B9A9E6"), Color.parseColor("#B14CFF"), 12,
+    ),
+    AMOLED(
+        "Hitam Pekat",
+        Color.BLACK, Color.parseColor("#1A1A1A"), Color.parseColor("#111111"),
+        Color.WHITE, Color.parseColor("#8E8E8E"), Color.parseColor("#00E5FF"), 10,
+    ),
+    NAVY_GOLD(
+        "Navy Emas",
+        Color.parseColor("#0B1630"), Color.parseColor("#1A2A52"), Color.parseColor("#132144"),
+        Color.parseColor("#F7E7B4"), Color.parseColor("#B8A878"), Color.parseColor("#E6B422"), 10,
+    ),
 }
+
+/** Background colours the user can put behind the keys instead of the theme's own. */
+val BACKGROUND_COLORS: List<Int> = listOf(
+    "#000000", "#1C1C1E", "#3A3A3C", "#8E8E93", "#E5E5EA", "#FFFFFF",
+    "#B71C1C", "#E53935", "#FF7043", "#FFB300", "#FDD835", "#C0CA33",
+    "#43A047", "#00897B", "#00ACC1", "#1E88E5", "#3949AB", "#5E35B1",
+    "#8E24AA", "#D81B60", "#F48FB1", "#A1887F", "#6D4C41", "#263238",
+).map { Color.parseColor(it) }
 
 /** Everything the user can change about how the keyboard looks and feels. */
 data class KeyboardSettings(
@@ -75,6 +143,10 @@ data class KeyboardSettings(
     val showMeaning: Boolean = true,
     /** Remember the target language and style separately for each app (e.g. Japanese in WhatsApp, formal English in e-mail). */
     val perAppLanguage: Boolean = true,
+    /** Raised keys with a darker edge and shadowed letters. */
+    val keys3d: Boolean = true,
+    /** Colour behind the keys instead of the theme's, or 0 for the theme's own. */
+    val backgroundColor: Int = 0,
 ) {
     companion object {
         const val MIN_HEIGHT = 70
@@ -88,7 +160,8 @@ data class KeyboardSettings(
         const val MIN_LONG_PRESS = 200
         const val MAX_LONG_PRESS = 800
 
-        private const val PREFS = "settings"
+        /** The preferences file; the keyboard watches it to apply changes straight away. */
+        const val PREFS = "settings"
 
         fun load(context: Context): KeyboardSettings {
             val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -114,6 +187,8 @@ data class KeyboardSettings(
                 clipboardHistory = p.getBoolean("clipboard_history", defaults.clipboardHistory),
                 showMeaning = p.getBoolean("show_meaning", defaults.showMeaning),
                 perAppLanguage = p.getBoolean("per_app_language", defaults.perAppLanguage),
+                keys3d = p.getBoolean("keys_3d", defaults.keys3d),
+                backgroundColor = p.getInt("background_color", defaults.backgroundColor),
             )
         }
 
@@ -139,6 +214,8 @@ data class KeyboardSettings(
                 .putBoolean("clipboard_history", settings.clipboardHistory)
                 .putBoolean("show_meaning", settings.showMeaning)
                 .putBoolean("per_app_language", settings.perAppLanguage)
+                .putBoolean("keys_3d", settings.keys3d)
+                .putInt("background_color", settings.backgroundColor)
                 .apply()
         }
     }

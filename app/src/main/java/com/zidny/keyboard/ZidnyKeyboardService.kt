@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
@@ -66,6 +67,13 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private var recognizer: SpeechRecognizer? = null
 
+    /** Applies changes made on the settings screen at once, even while the keyboard is open. */
+    private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        if (keyboardView == null || KeyboardSettings.load(this) == settings) return@OnSharedPreferenceChangeListener
+        setInputView(onCreateInputView())
+        keyboardView?.enterLabel = enterLabelFor(currentInputEditorInfo)
+    }
+
     private data class Correction(val original: String, val corrected: String, val separator: String)
 
     override fun onCreate() {
@@ -74,6 +82,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         style = Language.loadStyle(this)
         settings = KeyboardSettings.load(this)
         clipboard?.addPrimaryClipChangedListener(clipListener)
+        getSharedPreferences(KeyboardSettings.PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(settingsListener)
         thread(name = "load-words") {
             val loaded = WordPredictor(listOf(readWords("words_id.txt"), readWords("words_en.txt")))
             loaded.addUserWords(readUserWords())
@@ -83,6 +92,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onDestroy() {
         clipboard?.removePrimaryClipChangedListener(clipListener)
+        getSharedPreferences(KeyboardSettings.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(settingsListener)
         recognizer?.destroy()
         translator.close()
         super.onDestroy()
@@ -102,14 +112,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         super.onStartInputView(info, restarting)
         // Rebuild the keys if the user changed size or theme in the settings screen.
         if (KeyboardSettings.load(this) != settings) setInputView(onCreateInputView())
-        keyboardView?.enterLabel = when (info.imeOptions and EditorInfo.IME_MASK_ACTION) {
-            EditorInfo.IME_ACTION_SEND -> "Kirim"
-            EditorInfo.IME_ACTION_SEARCH -> "Cari"
-            EditorInfo.IME_ACTION_GO -> "Buka"
-            EditorInfo.IME_ACTION_NEXT -> "Lanjut"
-            EditorInfo.IME_ACTION_DONE -> "Selesai"
-            else -> "⏎"
-        }
+        keyboardView?.enterLabel = enterLabelFor(info)
         lastCorrection = null
         restoreAppLanguage(info.packageName)
         refreshTypingState()
@@ -118,12 +121,71 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         translateClipboard()
     }
 
+    /** Label for the enter key, e.g. "Kirim" when the app wants a send action. */
+    private fun enterLabelFor(info: EditorInfo?) = when ((info?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION) {
+        EditorInfo.IME_ACTION_SEND -> "Kirim"
+        EditorInfo.IME_ACTION_SEARCH -> "Cari"
+        EditorInfo.IME_ACTION_GO -> "Buka"
+        EditorInfo.IME_ACTION_NEXT -> "Lanjut"
+        EditorInfo.IME_ACTION_DONE -> "Selesai"
+        else -> "⏎"
+    }
+
+    /**
+     * Android shows a full-screen text box instead of the app in landscape by default. Keep the app visible
+     * with the keyboard under it, like Gboard and Samsung do.
+     */
+    override fun onEvaluateFullscreenMode() = false
+
+    override fun onOpenSettings() {
+        requestHideSelf(0)
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /** Suggests replies, in the sender's language, to the message the user copied from the chat. */
+    override fun onSuggestReplies() {
+        val view = keyboardView ?: return
+        val message = copiedText()
+        if (message == null) {
+            view.showMessage(
+                "💬", "Saran balasan",
+                "Salin (copy) pesan yang kamu terima di chat, lalu tekan 💬 lagi. Kamu dapat 3 pilihan balasan " +
+                    "dalam bahasa pengirimnya, lengkap dengan artinya.",
+            )
+            return
+        }
+        val snippet = message.replace(Regex("\\s+"), " ").trim().let { if (it.length > 60) it.take(60) + "…" else it }
+        view.showReplies("Saran balasan untuk: “$snippet”", null, null)
+        translator.suggestReplies(message, style) { result ->
+            // The user may have closed the panel while waiting.
+            if (!view.isShowingReplies) return@suggestReplies
+            when (result) {
+                is TextTranslator.ReplyResult.Success -> view.showReplies(
+                    "Balasan dalam ${result.language.displayName} · ${style.displayName} · untuk: “$snippet”",
+                    result.replies, result.language,
+                )
+                is TextTranslator.ReplyResult.Error -> view.showReplies(result.message, emptyList(), null)
+            }
+        }
+    }
+
+    /** The text on the clipboard, if any, unless it is too long to be a chat message. */
+    private fun copiedText(): String? {
+        val text = try {
+            clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        } catch (e: SecurityException) {
+            null
+        }
+        return text?.takeIf { it.isNotBlank() && it.length <= MAX_CLIP_CHARS }
+    }
+
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         recognizer?.cancel()
         keyboardView?.stopKeyRepeat()
         keyboardView?.setListening(false)
         keyboardView?.clearMessage()
+        keyboardView?.closePanels()
         saveUserWords()
     }
 
@@ -468,15 +530,10 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         translator.translate(text, Language.INDONESIAN) { result ->
             if (result !is TextTranslator.Result.Success) return@translate
             val title = "Pesan yang kamu salin (${result.source.displayName}) artinya:"
-            if (result.source == target) {
-                view.showMessage("💬", title, result.text)
-                return@translate
-            }
-            // One tap switches the keyboard to the sender's language, ready to type the reply in Indonesian.
-            view.showMessage("💬", title, result.text, "Balas pakai ${result.source.displayName}") {
+            // One tap offers ready-made replies in the sender's language.
+            view.showMessage("💬", title, result.text, "💬 Saran balasan") {
                 view.hideMessagePanel()
-                onPickLanguage(result.source)
-                view.setStatus("Ketik balasanmu, lalu tekan Terjemahkan")
+                onSuggestReplies()
             }
         }
     }

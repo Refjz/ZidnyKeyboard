@@ -2,8 +2,11 @@ package com.zidny.keyboard
 
 /** A single key on the keyboard. [weight] is its width relative to a normal letter key. */
 sealed class Key(val weight: Float = 1f) {
-    /** Types [value]. Holding it offers [alternates], such as a digit or accented letters. */
-    class Char(val value: String, weight: Float = 1f, val alternates: String = "") : Key(weight)
+    /**
+     * Types [value]. Holding it offers [alternates], such as a digit or accented letters. With Shift on it
+     * types [shifted] (like ! on the 1 key of a PC keyboard), or the capital letter when there is none.
+     */
+    class Char(val value: String, weight: Float = 1f, val alternates: String = "", val shifted: String? = null) : Key(weight)
     object Shift : Key(1.5f)
     object CapsLock : Key(1.5f)
     object Tab : Key(1.5f)
@@ -43,10 +46,15 @@ object KeyboardLayouts {
         Key.Char(c.toString(), alternates = "${(i + 1) % 10}" + (ACCENTS[c] ?: ""))
     }
 
+    /** Keys that type the matching character of [shifted] with Shift on, as on a PC keyboard. */
+    private fun pcRow(chars: String, shifted: String): List<Key> =
+        chars.mapIndexed { i, c -> Key.Char(c.toString(), shifted = shifted[i].toString()) }
+
     private val numberRow = row("1234567890")
 
+    // @ sits next to the space bar because e-mail addresses are typed so often; emoji are on the toolbar.
     private fun bottomRow(): List<Key> =
-        listOf(Key.Symbols, Key.Emoji, Key.Char(",", alternates = "!?"), Key.Space, Key.Char(".", alternates = PERIOD_ALTERNATES), Key.Enter)
+        listOf(Key.Symbols, Key.Char("@"), Key.Char(",", alternates = "!?"), Key.Space, Key.Char(".", alternates = PERIOD_ALTERNATES), Key.Enter)
 
     fun letters(layout: KeyboardLayout, withNumberRow: Boolean): List<List<Key>> {
         val rows = when (layout) {
@@ -70,11 +78,11 @@ object KeyboardLayouts {
             )
             // A PC keyboard always shows its number row, so the setting does not apply here.
             KeyboardLayout.DESKTOP -> return listOf(
-                row("`1234567890-="),
-                listOf<Key>(Key.Tab) + row("qwertyuiop[]"),
-                listOf<Key>(Key.CapsLock) + row("asdfghjkl;'"),
-                listOf<Key>(Key.Shift) + row("zxcvbnm,./") + Key.Delete,
-                listOf(Key.Symbols, Key.Left, Key.Space, Key.Right, Key.Enter),
+                pcRow("`1234567890-=", "~!@#$%^&*()_+"),
+                listOf<Key>(Key.Tab) + row("qwertyuiop") + pcRow("[]\\", "{}|"),
+                listOf<Key>(Key.CapsLock) + row("asdfghjkl") + pcRow(";'", ":\""),
+                listOf<Key>(Key.Shift) + row("zxcvbnm") + pcRow(",./", "<>?") + Key.Delete,
+                listOf(Key.Symbols, Key.Char("@"), Key.Left, Key.Space, Key.Right, Key.Enter),
             )
         }
         return if (withNumberRow) listOf(numberRow) + rows else rows
