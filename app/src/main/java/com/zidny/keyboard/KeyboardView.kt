@@ -71,11 +71,12 @@ class KeyboardView(
     private val theme = settings.theme
     private val audio = context.getSystemService(AudioManager::class.java)
 
+    /** Changing it relabels the keys in place: rebuilding them mid-typing drops a key that is still held. */
     var shiftState = ShiftState.OFF
         set(value) {
             if (field == value) return
             field = value
-            render()
+            refreshKeys()
         }
 
     /** Label for the enter key, e.g. "Kirim" when the app wants a send action. */
@@ -83,8 +84,11 @@ class KeyboardView(
         set(value) {
             if (field == value) return
             field = value
-            render()
+            refreshKeys()
         }
+
+    /** The keys on screen now, so a change of Shift or the enter label can update them without a rebuild. */
+    private val keyViews = mutableListOf<Pair<Key, TextView>>()
 
     private val languageButton = toolbarButton {
         showPicker = !showPicker
@@ -228,7 +232,8 @@ class KeyboardView(
         textSize = settings.textSize * 1.4f
         background = rounded(theme.key)
         elevation = dp(6).toFloat()
-        visibility = GONE
+        // Hidden with INVISIBLE rather than GONE: showing it again then needs no new layout pass.
+        visibility = INVISIBLE
     }
     private val alternatesRow = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -278,11 +283,14 @@ class KeyboardView(
     }
 
     fun setStatus(message: String) {
-        statusText.text = message
+        if (statusText.text.toString() != message) statusText.text = message
     }
 
     fun setSuggestions(words: List<String>) {
-        suggestionViews.forEachIndexed { i, view -> view.text = words.getOrNull(i) ?: "" }
+        suggestionViews.forEachIndexed { i, view ->
+            val word = words.getOrNull(i) ?: ""
+            if (view.text.toString() != word) view.text = word
+        }
     }
 
     /** Shows [label] as a one-tap paste chip next to the suggestions, or hides it when null. */
@@ -353,6 +361,7 @@ class KeyboardView(
     private fun render() {
         content.removeAllViews()
         shrinkable.clear()
+        keyViews.clear()
         content.addView(toolbar, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOLBAR_DP)))
         content.addView(strip, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(STRIP_DP)))
         (clipboardButton.background as GradientDrawable).setColor(if (showClipboard) theme.accent else theme.specialKey)
@@ -589,23 +598,37 @@ class KeyboardView(
 
     private fun isSpecial(key: Key) = key !is Key.Char || key.value in listOf(",", ".")
 
+    private fun colorFor(key: Key) = when {
+        key == Key.CapsLock && shiftState == ShiftState.LOCKED -> theme.accent
+        isSpecial(key) -> theme.specialKey
+        else -> theme.key
+    }
+
+    private fun applyLabel(view: TextView, key: Key) {
+        val label = labelFor(key)
+        if (view.text.toString() == label) return
+        view.textSize = if (key is Key.Char || label.length == 1) settings.textSize.toFloat() else settings.textSize * 0.75f
+        view.text = label
+    }
+
+    /** Updates labels and colours that depend on Shift or the enter label, keeping the same key views. */
+    private fun refreshKeys() {
+        for ((key, view) in keyViews) {
+            applyLabel(view, key)
+            if (key == Key.CapsLock) (view.background as GradientDrawable).setColor(colorFor(key))
+        }
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private fun createKey(key: Key): TextView {
-        val color = when {
-            key == Key.CapsLock && shiftState == ShiftState.LOCKED -> theme.accent
-            isSpecial(key) -> theme.specialKey
-            else -> theme.key
-        }
-        val drawable = rounded(color)
-        val pressedColor = ColorUtils.blendARGB(color, theme.text, 0.18f)
+        val drawable = rounded(colorFor(key))
         val view = TextView(context).apply {
             gravity = Gravity.CENTER
             setTextColor(theme.text)
-            val label = labelFor(key)
-            textSize = if (key is Key.Char || label.length == 1) settings.textSize.toFloat() else settings.textSize * 0.75f
-            text = label
             background = drawable
         }
+        applyLabel(view, key)
+        keyViews.add(key to view)
         // Half the gap on each side gives the chosen space between neighbouring keys.
         val margin = (settings.keyGap * density / 2).toInt()
         val lp = LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, key.weight)
@@ -623,7 +646,7 @@ class KeyboardView(
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    drawable.setColor(pressedColor)
+                    drawable.setColor(ColorUtils.blendARGB(colorFor(key), theme.text, 0.18f))
                     tapFeedback(v, soundFor(key))
                     when (key) {
                         Key.Delete -> {
@@ -646,7 +669,7 @@ class KeyboardView(
                     key == Key.Space -> moveCursorBySwipe(event.x)
                 }
                 MotionEvent.ACTION_UP -> {
-                    finishPress(drawable, color, repeatDelete, showAlternates)
+                    finishPress(drawable, colorFor(key), repeatDelete, showAlternates)
                     when {
                         alternates.isNotEmpty() -> {
                             listener.onText(alternates[selectedAlternate])
@@ -659,7 +682,7 @@ class KeyboardView(
                     closeAlternates()
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    finishPress(drawable, color, repeatDelete, showAlternates)
+                    finishPress(drawable, colorFor(key), repeatDelete, showAlternates)
                     closeAlternates()
                 }
             }
@@ -671,7 +694,7 @@ class KeyboardView(
     private fun finishPress(drawable: GradientDrawable, color: Int, vararg pending: Runnable) {
         drawable.setColor(color)
         pending.forEach { keyHandler.removeCallbacks(it) }
-        preview.visibility = GONE
+        preview.visibility = INVISIBLE
     }
 
     /** Dragging along the space bar moves the cursor one character per step. */
@@ -697,10 +720,16 @@ class KeyboardView(
         val width = (key.width * 1.3f).toInt()
         val height = (key.height * 1.25f).toInt()
         preview.text = label
-        preview.layoutParams = LayoutParams(width, height).apply {
-            leftMargin = (left - (width - key.width) / 2).coerceIn(0, maxOf(0, overlay.width - width))
-            topMargin = maxOf(0, top - height - dp(4))
+        // Resize only when the key size differs and place it with translation, so a key press doesn't
+        // make the whole keyboard measure and lay itself out again.
+        val lp = preview.layoutParams
+        if (lp.width != width || lp.height != height) {
+            lp.width = width
+            lp.height = height
+            preview.layoutParams = lp
         }
+        preview.translationX = (left - (width - key.width) / 2).coerceIn(0, maxOf(0, overlay.width - width)).toFloat()
+        preview.translationY = maxOf(0, top - height - dp(4)).toFloat()
         preview.visibility = VISIBLE
     }
 
@@ -709,7 +738,7 @@ class KeyboardView(
         val main = if (upper) k.value.uppercase() else k.value
         alternates = (listOf(main) + k.alternates.map { if (upper) it.uppercase() else it.toString() }).distinct()
         selectedAlternate = 1.coerceAtMost(alternates.size - 1)
-        preview.visibility = GONE
+        preview.visibility = INVISIBLE
         if (settings.vibrate) key.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
 
         alternatesRow.removeAllViews()
