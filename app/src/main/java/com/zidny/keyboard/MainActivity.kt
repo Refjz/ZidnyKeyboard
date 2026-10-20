@@ -309,9 +309,6 @@ class MainActivity : AppCompatActivity() {
         })
         addView(switch(tr("😊  Emoji", "😊  Emoji"), settings.toolEmoji) { update(settings.copy(toolEmoji = it)) })
         addView(switch(tr("ツ  Kaomoji (◕‿◕)", "ツ  Kaomoji (◕‿◕)"), settings.toolKaomoji) { update(settings.copy(toolKaomoji = it)) })
-        addView(switch(tr("𝓐  Font keren (𝐁𝐨𝐥𝐝, 𝓢𝓪𝓶𝓫𝓾𝓷𝓰, ⓑⓤⓑⓑⓛⓔ)", "𝓐  Fancy fonts (𝐁𝐨𝐥𝐝, 𝓢𝓬𝓻𝓲𝓹𝓽, ⓑⓤⓑⓑⓛⓔ)"), settings.toolFonts) {
-            update(settings.copy(toolFonts = it))
-        })
         addView(switch(tr("📋  Riwayat salinan", "📋  Clipboard"), settings.toolClipboard) { update(settings.copy(toolClipboard = it)) })
         addView(switch(tr("🎤  Ketik pakai suara", "🎤  Voice typing"), settings.toolMic) { update(settings.copy(toolMic = it)) })
         val calendarEventsSwitch = switch(tr("Tampilkan jadwal & jam kosong dari kalender HP", "Show events & free time from the phone's calendar"),
@@ -330,6 +327,9 @@ class MainActivity : AppCompatActivity() {
             switch(tr("🕐  Zona waktu dunia", "🕐  World clock"), settings.appClock) { update(settings.copy(appClock = it)) },
             switch(tr("📅  Kalender", "📅  Calendar"), settings.appCalendar, calendarOptions) { update(settings.copy(appCalendar = it)) },
             calendarOptions,
+            switch(tr("𝓐  Gaya huruf (𝐁𝐨𝐥𝐝, 𝓢𝓪𝓶𝓫𝓾𝓷𝓰, ⓑⓤⓑⓑⓛⓔ)", "𝓐  Text styles (𝐁𝐨𝐥𝐝, 𝓢𝓬𝓻𝓲𝓹𝓽, ⓑⓤⓑⓑⓛⓔ)"), settings.appFonts) {
+                update(settings.copy(appFonts = it))
+            },
         )
         addView(switch(tr("🧰  Tools", "🧰  Tools"), settings.toolApps, apps) { update(settings.copy(toolApps = it)) })
         addView(apps)

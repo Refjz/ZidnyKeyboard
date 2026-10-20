@@ -217,3 +217,10 @@ test("line mode returns lines from the chat model", async () => {
   assert.equal(body.replies.length, 3);
   assert.equal(body.replies[0].meaning, "You are pretty");
 });
+
+test("validate accepts Korean, Spanish, Filipino, Vietnamese, Thai and Russian", () => {
+  for (const target of ["ko", "es", "tl", "vi", "th", "ru"]) {
+    assert.equal(validate({ text: "halo", source: "id", target }), null);
+    assert.match(translationPrompt("id", target, "casual"), /Korean|Spanish|Filipino|Vietnamese|Thai|Russian/);
+  }
+});

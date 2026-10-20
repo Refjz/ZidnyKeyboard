@@ -15,7 +15,7 @@
 // sha256(requestHashInput(body)). Requests from apps not installed from
 // Google Play (pirated or modified copies) are rejected with 403.
 
-export const LANGUAGES = ["id", "en", "fr", "zh", "ja"];
+export const LANGUAGES = ["id", "en", "fr", "zh", "ja", "ko", "es", "tl", "vi", "th", "ru"];
 export const MAX_CHARS = 2000;
 export const STYLES = ["casual", "polite", "formal"];
 export const MODES = ["translate", "polish", "reply", "line"];
@@ -31,7 +31,10 @@ export const REPLY_COUNT = 3;
 // A chat model understands casual chat and slang ("cobain aja bro"); m2m100 is the fallback.
 const CHAT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const FALLBACK_MODEL = "@cf/meta/m2m100-1.2b";
-const LANGUAGE_NAMES = { id: "Indonesian", en: "English", fr: "French", zh: "Simplified Chinese", ja: "Japanese" };
+const LANGUAGE_NAMES = {
+  id: "Indonesian", en: "English", fr: "French", zh: "Simplified Chinese", ja: "Japanese",
+  ko: "Korean", es: "Spanish", tl: "Filipino (Tagalog)", vi: "Vietnamese", th: "Thai", ru: "Russian",
+};
 const STYLE_INSTRUCTIONS = {
   casual: "Keep the meaning, tone and casualness, as a native speaker would write it in a chat.",
   polite:

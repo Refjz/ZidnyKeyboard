@@ -183,7 +183,6 @@ class KeyboardView(
     private val toolsButton = iconButton("🧰") {
         togglePanel(if (panel in TOOL_APPS) panel else Panel.TOOLS)
     }.shownIf(settings.toolApps && toolApps().isNotEmpty())
-    private val fontButton = iconButton("𝓐") { togglePanel(Panel.FONTS) }.shownIf(settings.toolFonts)
     private val kaomojiButton = iconButton("ツ") { togglePanel(Panel.KAOMOJI) }.shownIf(settings.toolKaomoji)
     private val linesButton = iconButton("🎭") { togglePanel(Panel.LINES) }.shownIf(settings.toolLines)
     private val tidyButton = iconButton("🪄") { listener.onTidy() }.shownIf(settings.toolTidy)
@@ -197,7 +196,6 @@ class KeyboardView(
         Panel.TOOLS to toolsButton,
         Panel.REPLIES to replyButton,
         Panel.TRANSLATOR to boxButton,
-        Panel.FONTS to fontButton,
         Panel.KAOMOJI to kaomojiButton,
         Panel.LINES to linesButton,
     )
@@ -220,7 +218,7 @@ class KeyboardView(
             orientation = LinearLayout.HORIZONTAL
             listOf(
                 languageButton, boxButton, readButton, replyButton, tidyButton, linesButton, emojiButton, kaomojiButton,
-                fontButton, clipboardButton, micButton, toolsButton, settingsButton,
+                clipboardButton, micButton, toolsButton, settingsButton,
             ).forEach {
                 addView(it, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
             }
@@ -562,14 +560,10 @@ class KeyboardView(
             (button.background as GradientDrawable).setColor(if (open) theme.accent else theme.specialKey)
             button.setTextColor(if (open) Color.WHITE else theme.text)
         }
-        if (panel in TOOL_APPS) {
+        // A letter style stays on after its panel closes, so 🧰 stays lit to show it.
+        if (panel in TOOL_APPS || fancyFont != FancyFont.NORMAL) {
             (toolsButton.background as GradientDrawable).setColor(theme.accent)
             toolsButton.setTextColor(Color.WHITE)
-        }
-        // A letter style stays on after its panel closes, so its button stays lit to show it.
-        if (panel != Panel.FONTS && fancyFont != FancyFont.NORMAL) {
-            (fontButton.background as GradientDrawable).setColor(theme.accent)
-            fontButton.setTextColor(Color.WHITE)
         }
         when (panel) {
             Panel.PICKER -> return renderPicker()
@@ -791,8 +785,11 @@ class KeyboardView(
             choices.forEachIndexed { index, (label, selected) ->
                 addView(toolbarButton { onPick(index) }.apply {
                     text = label
-                    textSize = 14f
+                    textSize = 13f
+                    maxLines = 1
                     setPadding(dp(4), 0, dp(4), 0)
+                    // Blank choices only keep the last row's buttons the same width as the others.
+                    if (label.isEmpty()) visibility = INVISIBLE
                     if (selected) {
                         setTextColor(Color.WHITE)
                         (background as GradientDrawable).setColor(theme.accent)
@@ -803,9 +800,13 @@ class KeyboardView(
 
         panel.addView(caption("Terjemahkan ke"))
         val languages = Language.entries
-        panel.addView(choiceRow(languages.map { "${it.flag} ${it.displayName}" to (it == pickedLanguage) }) {
-            listener.onPickLanguage(languages[it])
-        })
+        // Four languages to a row, so each name still fits.
+        languages.chunked(LANGUAGES_PER_ROW).forEachIndexed { row, chunk ->
+            val labels = chunk.map { "${it.flag} ${it.displayName}" to (it == pickedLanguage) }
+            panel.addView(choiceRow(labels + List(LANGUAGES_PER_ROW - chunk.size) { "" to false }) { index ->
+                languages.getOrNull(row * LANGUAGES_PER_ROW + index)?.let { listener.onPickLanguage(it) }
+            })
+        }
         panel.addView(caption("Gaya bahasa"))
         val styles = TranslationStyle.entries
         panel.addView(choiceRow(styles.map { "${it.emoji} ${it.displayName}" to (it == pickedStyle) }) {
@@ -943,7 +944,11 @@ class KeyboardView(
 
     /** Letter styles: picking one types everything in it until Normal is picked again. */
     private fun renderFonts() {
-        content.addView(caption("Gaya huruf · berlaku sampai kamu pilih Normal lagi"), LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(32)))
+        content.addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(backToTools(), wrapParams())
+            addView(caption("Gaya huruf · berlaku sampai kamu pilih Normal lagi"), LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOL_HEADER_DP)))
         val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         FancyFont.entries.chunked(2).forEach { pair ->
             grid.addView(LinearLayout(context).apply {
@@ -965,7 +970,7 @@ class KeyboardView(
                 if (pair.size == 1) addView(View(context), LinearLayout.LayoutParams(0, dp(44), 1f))
             })
         }
-        addShrinkable(ScrollView(context).apply { addView(grid) }, panelHeight(dp(32)))
+        addShrinkable(ScrollView(context).apply { addView(grid) }, panelHeight(dp(TOOL_HEADER_DP)))
         addShrinkable(bottomKeys(), keyRowHeight())
     }
 
@@ -1267,6 +1272,7 @@ class KeyboardView(
         if (settings.appConverter) Triple(Panel.CONVERTER, "💱", "Kurs & satuan") else null,
         if (settings.appClock) Triple(Panel.CLOCK, "🕐", "Zona waktu") else null,
         if (settings.appCalendar) Triple(Panel.CALENDAR, "📅", "Kalender") else null,
+        if (settings.appFonts) Triple(Panel.FONTS, "𝓐", "Gaya huruf") else null,
     )
 
     private fun openTool(target: Panel) {
@@ -2064,7 +2070,8 @@ class KeyboardView(
         const val BOX_DELAY_MS = 700L
         const val BOX_VISIBLE_CHARS = 90
         const val EMOJI_COLUMNS = 8
+        const val LANGUAGES_PER_ROW = 4
         const val TOOL_HEADER_DP = 38
-        val TOOL_APPS = setOf(Panel.TOOLS, Panel.CALCULATOR, Panel.CONVERTER, Panel.CLOCK, Panel.CALENDAR)
+        val TOOL_APPS = setOf(Panel.TOOLS, Panel.CALCULATOR, Panel.CONVERTER, Panel.CLOCK, Panel.CALENDAR, Panel.FONTS)
     }
 }

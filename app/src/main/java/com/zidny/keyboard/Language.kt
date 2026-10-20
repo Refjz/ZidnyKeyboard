@@ -8,7 +8,13 @@ enum class Language(val code: String, val label: String, val displayName: String
     ENGLISH("en", "EN", "Inggris", "🇬🇧"),
     FRENCH("fr", "FR", "Prancis", "🇫🇷"),
     CHINESE("zh", "ZH", "Mandarin", "🇨🇳"),
-    JAPANESE("ja", "JA", "Jepang", "🇯🇵");
+    JAPANESE("ja", "JA", "Jepang", "🇯🇵"),
+    KOREAN("ko", "KO", "Korea", "🇰🇷"),
+    SPANISH("es", "ES", "Spanyol", "🇪🇸"),
+    FILIPINO("tl", "TL", "Filipina", "🇵🇭"),
+    VIETNAMESE("vi", "VI", "Vietnam", "🇻🇳"),
+    THAI("th", "TH", "Thailand", "🇹🇭"),
+    RUSSIAN("ru", "RU", "Rusia", "🇷🇺");
 
     companion object {
         private const val PREFS = "settings"
@@ -16,7 +22,8 @@ enum class Language(val code: String, val label: String, val displayName: String
         private const val KEY_STYLE = "translation_style"
         private const val APP_PREFS = "app_languages"
 
-        fun fromCode(code: String?): Language? = entries.firstOrNull { it.code == code }
+        // The language detector may call Filipino "fil" rather than "tl".
+        fun fromCode(code: String?): Language? = if (code == "fil") FILIPINO else entries.firstOrNull { it.code == code }
 
         fun loadTarget(context: Context): Language {
             val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TARGET, null)
