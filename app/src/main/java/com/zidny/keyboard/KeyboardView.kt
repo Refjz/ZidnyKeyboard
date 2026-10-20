@@ -43,6 +43,10 @@ class KeyboardView(
         fun onEnter()
         fun onKeyCode(keyCode: Int)
         fun onTranslate()
+        /** The user held Terjemahkan to turn translating while typing on or off. */
+        fun onToggleLiveTranslate()
+        /** With live translation on, what the user has typed so far (the keys type here, not into the app). */
+        fun onLiveInput(text: String)
         fun onUndoTranslate()
         fun onVoice()
         /** The user picked the language to translate into from the language panel. */
@@ -168,7 +172,36 @@ class KeyboardView(
         text = "Terjemahkan"
         setTextColor(Color.WHITE)
         (background as GradientDrawable).setColor(theme.accent)
+        setOnLongClickListener {
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            listener.onToggleLiveTranslate()
+            true
+        }
     }
+    /**
+     * With live translation on, the keys type here and the app's field gets the translation, like Gboard's
+     * translate mode. This line shows what the user actually typed; a tap asks the AI for a better translation.
+     */
+    private val livePreview = TextView(context).apply {
+        setTextColor(theme.text)
+        hint = "⚡ Ketik di sini, terjemahannya langsung masuk ke kolom chat"
+        setHintTextColor(theme.secondaryText)
+        textSize = 14f
+        maxLines = 2
+        ellipsize = android.text.TextUtils.TruncateAt.START
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(10), 0, dp(10), 0)
+        background = rounded(theme.key)
+        visibility = GONE
+        setOnClickListener {
+            tapFeedback(it, AudioManager.FX_KEYPRESS_STANDARD)
+            listener.onTranslate()
+        }
+    }
+    private var liveTranslate = false
+    /** What the user typed while live translation is on. */
+    var liveText = ""
+        private set
     private val undoButton = toolbarButton { listener.onUndoTranslate() }.apply {
         text = "↶"
         visibility = GONE
@@ -227,6 +260,7 @@ class KeyboardView(
             isHorizontalScrollBarEnabled = false
             addView(tools, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT))
         }, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        addView(livePreview, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).withMargins())
         addView(undoButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(translateButton, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
     }
@@ -284,7 +318,7 @@ class KeyboardView(
     private val hideToolbar = object : Runnable {
         override fun run() {
             // Keep it while something on it is in use, and look again a little later.
-            if (panel != Panel.KEYS || busy || messagePanel.visibility == VISIBLE) {
+            if (panel != Panel.KEYS || busy || liveTranslate || messagePanel.visibility == VISIBLE) {
                 toolbarTimer.postDelayed(this, TOOLBAR_SHOW_MS)
             } else {
                 setToolbarShown(false)
@@ -409,6 +443,28 @@ class KeyboardView(
         pickedStyle = style
         languageButton.text = "→ ${language.label} ${style.emoji}"
         if (panel == Panel.PICKER) render()
+    }
+
+    /** Turns live translation on or off: the typing line replaces the tools and the toolbar stays in view. */
+    fun setLiveTranslate(on: Boolean) {
+        liveTranslate = on
+        translateButton.text = if (on) "⚡ AI" else "Terjemahkan"
+        clearLiveText()
+        livePreview.visibility = if (on) VISIBLE else GONE
+        toolbar.getChildAt(0).visibility = if (on) GONE else VISIBLE
+        if (on) setToolbarShown(true)
+    }
+
+    /** Starts a new message, e.g. after the last one was sent and the app emptied its field. */
+    fun clearLiveText() {
+        liveText = ""
+        livePreview.text = ""
+    }
+
+    private fun setLiveText(text: String) {
+        liveText = text
+        livePreview.text = if (text.length > BOX_VISIBLE_CHARS) "…" + text.takeLast(BOX_VISIBLE_CHARS) else text
+        listener.onLiveInput(text)
     }
 
     fun setStatus(message: String) {
@@ -687,6 +743,7 @@ class KeyboardView(
 
     /** Types [text] into the 文A box when it is open, otherwise into the app. */
     private fun type(text: String) {
+        if (liveTranslate && panel == Panel.KEYS) return setLiveText(liveText + text)
         if (panel != Panel.TRANSLATOR) return listener.onText(fancyFont.apply(text))
         boxText += text
         showBoxInput()
@@ -694,6 +751,13 @@ class KeyboardView(
     }
 
     private fun deleteOne() {
+        if (liveTranslate && panel == Panel.KEYS && liveText.isNotEmpty()) {
+            val start = java.text.BreakIterator.getCharacterInstance().run {
+                setText(liveText)
+                preceding(liveText.length).coerceAtLeast(0)
+            }
+            return setLiveText(liveText.substring(0, start))
+        }
         if (panel != Panel.TRANSLATOR) return listener.onDelete()
         if (boxText.isEmpty()) return
         // Remove a whole emoji or accented letter, not half of it.
@@ -2037,7 +2101,14 @@ class KeyboardView(
             }
             Key.Emoji -> { panel = Panel.EMOJI; render() }
             Key.Space -> type(" ")
-            Key.Enter -> if (panel == Panel.TRANSLATOR) scheduleBoxTranslation(0) else listener.onEnter()
+            Key.Enter -> when {
+                panel == Panel.TRANSLATOR -> scheduleBoxTranslation(0)
+                else -> {
+                    // A sent message or a new line starts a new live line; what's in the field stays.
+                    if (liveTranslate) clearLiveText()
+                    listener.onEnter()
+                }
+            }
         }
     }
 

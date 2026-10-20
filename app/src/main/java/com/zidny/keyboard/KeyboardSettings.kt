@@ -139,6 +139,8 @@ data class KeyboardSettings(
     val translatePreview: Boolean = false,
     /** Remember copied texts so they can be pasted again from the 📋 panel. */
     val clipboardHistory: Boolean = true,
+    /** Show Google's on-device translation at once while the AI writes its own; downloads ~30 MB per language. */
+    val offlineTranslate: Boolean = true,
     /** After translating, also show what the result means in Indonesian. */
     val showMeaning: Boolean = true,
     /** Remember the target language and style separately for each app (e.g. Japanese in WhatsApp, formal English in e-mail). */
@@ -229,6 +231,7 @@ data class KeyboardSettings(
                 translatePreview = p.getBoolean("translate_preview", defaults.translatePreview),
                 clipboardHistory = p.getBoolean("clipboard_history", defaults.clipboardHistory),
                 showMeaning = p.getBoolean("show_meaning", defaults.showMeaning),
+                offlineTranslate = p.getBoolean("offline_translate", defaults.offlineTranslate),
                 perAppLanguage = p.getBoolean("per_app_language", defaults.perAppLanguage),
                 keys3d = p.getBoolean("keys_3d", defaults.keys3d),
                 autoHideToolbar = p.getBoolean("auto_hide_toolbar", defaults.autoHideToolbar),
@@ -283,6 +286,7 @@ data class KeyboardSettings(
                 .putBoolean("translate_preview", settings.translatePreview)
                 .putBoolean("clipboard_history", settings.clipboardHistory)
                 .putBoolean("show_meaning", settings.showMeaning)
+                .putBoolean("offline_translate", settings.offlineTranslate)
                 .putBoolean("per_app_language", settings.perAppLanguage)
                 .putBoolean("keys_3d", settings.keys3d)
                 .putBoolean("auto_hide_toolbar", settings.autoHideToolbar)

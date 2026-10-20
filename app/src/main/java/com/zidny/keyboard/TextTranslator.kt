@@ -25,6 +25,10 @@ class TextTranslator(context: Context) {
             val source: Language,
             val meaning: String? = null,
             val polished: Boolean = false,
+            /** Translated on the phone, without the AI. */
+            val offline: Boolean = false,
+            /** The AI's translation is still on its way and will be passed on next. */
+            val pending: Boolean = false,
         ) : Result()
         data class AlreadyInTarget(val language: Language) : Result()
         data class Error(val message: String) : Result()
@@ -41,6 +45,18 @@ class TextTranslator(context: Context) {
 
     private val identifier = LanguageIdentification.getClient()
     private val integrity = IntegrityChecker(context)
+    private val offline = OfflineTranslator()
+
+    /** Use the on-device translation for an instant first result. */
+    var offlineEnabled = true
+
+    /** Prepares what the next translation into [target] needs, so it doesn't wait: Google Play and the offline models. */
+    fun warmUp(target: Language) {
+        integrity.warmUp()
+        if (!offlineEnabled) return
+        offline.prepare(Language.INDONESIAN, target)
+        offline.prepare(target, Language.INDONESIAN)
+    }
     private val main = Handler(Looper.getMainLooper())
 
     /** What to ask the server for, besides the text and languages. */
@@ -52,7 +68,11 @@ class TextTranslator(context: Context) {
         val polishSameLanguage: Boolean = false,
     )
 
-    /** Translates [text] into [target] and calls [onResult] on the main thread. */
+    /**
+     * Translates [text] into [target] and calls [onResult] on the main thread. With the offline models on the
+     * phone it is called twice: first at once with the on-device result (offline and pending), then with the
+     * AI's. If the server can't be reached, the second call repeats the offline result, no longer pending.
+     */
     fun translate(text: String, target: Language, options: Options = Options(), onResult: (Result) -> Unit) {
         identifier.identifyLanguage(text)
             .addOnSuccessListener { tag ->
@@ -70,9 +90,43 @@ class TextTranslator(context: Context) {
                 val polish = source == target
                 // Polishing keeps the user's own words, so slang is only normalised before translating.
                 val input = if (source == Language.INDONESIAN && !polish) SlangNormalizer.normalize(text) else text
-                translateOnServer(Request(input, source, target, options.style, polish, options.explain), onResult)
+                val request = Request(input, source, target, options.style, polish, options.explain)
+                if (polish || !offlineEnabled) return@addOnSuccessListener translateOnServer(request, onResult)
+                var serverDone = false
+                var quickResult: String? = null
+                offline.translate(input, source, target) { quick ->
+                    // The server can win the race on a fast connection; its result is the better one.
+                    if (quick == null || serverDone) return@translate
+                    quickResult = quick
+                    onResult(Result.Success(quick, source, offline = true, pending = true))
+                }
+                translateOnServer(request) { result ->
+                    serverDone = true
+                    val quick = quickResult
+                    onResult(if (result is Result.Error && quick != null) Result.Success(quick, source, offline = true) else result)
+                }
             }
             .addOnFailureListener { onResult(Result.Error("Gagal mengenali bahasa")) }
+    }
+
+    /**
+     * A fast translation for live translation while typing, made only on the phone: asking the server at every
+     * pause would use up the daily Play Integrity quota. Calls [onResult] on the main thread with the result,
+     * or null when there is none: the text is already in [target], or the offline models are still downloading.
+     */
+    fun translateQuick(text: String, target: Language, onResult: (String?) -> Unit) {
+        identifier.identifyLanguage(text)
+            .addOnSuccessListener { tag ->
+                val source = when (tag) {
+                    in INDONESIAN_LOOKALIKES -> Language.INDONESIAN
+                    else -> Language.fromCode(tag) ?: if (target == Language.INDONESIAN) Language.ENGLISH else Language.INDONESIAN
+                }
+                if (source == target) return@addOnSuccessListener onResult(null)
+                val input = if (source == Language.INDONESIAN) SlangNormalizer.normalize(text) else text
+                if (!offlineEnabled) return@addOnSuccessListener onResult(null)
+                offline.translate(input, source, target, onResult)
+            }
+            .addOnFailureListener { onResult(null) }
     }
 
     /**
@@ -225,6 +279,7 @@ class TextTranslator(context: Context) {
 
     fun close() {
         identifier.close()
+        offline.close()
     }
 
     private companion object {

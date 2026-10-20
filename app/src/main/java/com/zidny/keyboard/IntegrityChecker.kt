@@ -29,6 +29,11 @@ class IntegrityChecker(context: Context) {
         }
     }
 
+    /** Gets Google Play ready ahead of time, so the first translation doesn't wait for it. */
+    fun warmUp() {
+        if (BuildConfig.CLOUD_PROJECT_NUMBER != 0L && provider == null) prepare {}
+    }
+
     private fun prepare(onReady: (StandardIntegrityTokenProvider?) -> Unit) {
         manager.prepareIntegrityToken(
             PrepareIntegrityTokenRequest.builder().setCloudProjectNumber(BuildConfig.CLOUD_PROJECT_NUMBER).build()
