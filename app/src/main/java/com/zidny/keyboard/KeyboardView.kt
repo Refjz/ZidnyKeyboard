@@ -876,6 +876,13 @@ class KeyboardView(
         panel.addView(choiceRow(styles.map { "${it.emoji} ${it.displayName}" to (it == pickedStyle) }) {
             listener.onPickStyle(styles[it])
         })
+        // Also turned on and off by holding Terjemahkan; here it can be found without knowing that.
+        panel.addView(caption("⚡ Terjemahan langsung saat mengetik (masuk ke kolom chat)"))
+        panel.addView(choiceRow(listOf("Mati" to !liveTranslate, "⚡ Nyala" to liveTranslate)) { index ->
+            if ((index == 1) != liveTranslate) listener.onToggleLiveTranslate()
+            this@KeyboardView.panel = Panel.KEYS
+            render()
+        })
         if (pickerHint.isNotEmpty()) panel.addView(caption(pickerHint))
 
         // Like the emoji panel, the choices and bottom row take the height of the letter rows they replace.
