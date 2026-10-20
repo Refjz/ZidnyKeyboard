@@ -109,24 +109,56 @@ class TextTranslator(context: Context) {
             .addOnFailureListener { onResult(Result.Error("Gagal mengenali bahasa")) }
     }
 
+    /** The outcome of [translateQuick]. */
+    sealed class Quick {
+        data class Done(val text: String) : Quick()
+        /** Nothing to translate, e.g. the text is already in the target language. */
+        object Same : Quick()
+        /** The offline models for this language are still downloading (about 30 MB, once). */
+        object Downloading : Quick()
+        /** Downloading the models failed, e.g. without internet; the next try downloads again. */
+        object DownloadFailed : Quick()
+        object Off : Quick()
+    }
+
+    /** Lets the caller translate again once offline models finish downloading. */
+    var onOfflineReady: (() -> Unit)?
+        get() = offline.onReady
+        set(value) { offline.onReady = value }
+
     /**
      * A fast translation for live translation while typing, made only on the phone: asking the server at every
-     * pause would use up the daily Play Integrity quota. Calls [onResult] on the main thread with the result,
-     * or null when there is none: the text is already in [target], or the offline models are still downloading.
+     * pause would use up the daily Play Integrity quota. Calls [onResult] on the main thread.
+     *
+     * The user writes their own Indonesian while typing, and the first few words are too short to detect a
+     * language reliably (they come out as Filipino, Malay and so on), so the text is taken as Indonesian unless
+     * the target is Indonesian itself.
      */
-    fun translateQuick(text: String, target: Language, onResult: (String?) -> Unit) {
+    fun translateQuick(text: String, target: Language, onResult: (Quick) -> Unit) {
+        if (!offlineEnabled) return onResult(Quick.Off)
+        if (target != Language.INDONESIAN) return translateOffline(SlangNormalizer.normalize(text), Language.INDONESIAN, target, onResult)
         identifier.identifyLanguage(text)
             .addOnSuccessListener { tag ->
-                val source = when (tag) {
-                    in INDONESIAN_LOOKALIKES -> Language.INDONESIAN
-                    else -> Language.fromCode(tag) ?: if (target == Language.INDONESIAN) Language.ENGLISH else Language.INDONESIAN
-                }
-                if (source == target) return@addOnSuccessListener onResult(null)
-                val input = if (source == Language.INDONESIAN) SlangNormalizer.normalize(text) else text
-                if (!offlineEnabled) return@addOnSuccessListener onResult(null)
-                offline.translate(input, source, target, onResult)
+                val source = if (tag in INDONESIAN_LOOKALIKES) Language.INDONESIAN else Language.fromCode(tag) ?: Language.ENGLISH
+                if (source == target) onResult(Quick.Same) else translateOffline(text, source, target, onResult)
             }
-            .addOnFailureListener { onResult(null) }
+            .addOnFailureListener { translateOffline(text, Language.ENGLISH, target, onResult) }
+    }
+
+    private fun translateOffline(text: String, source: Language, target: Language, onResult: (Quick) -> Unit) {
+        offline.translate(text, source, target) { result ->
+            onResult(
+                when {
+                    result != null -> Quick.Done(result)
+                    else -> when (offline.state(source, target)) {
+                        OfflineTranslator.State.DOWNLOADING -> Quick.Downloading
+                        OfflineTranslator.State.FAILED -> Quick.DownloadFailed
+                        // Not a language ML Kit knows, or it gave up on this text: show it as typed.
+                        else -> Quick.Same
+                    }
+                }
+            )
+        }
     }
 
     /**
