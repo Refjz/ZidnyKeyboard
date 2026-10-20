@@ -18,6 +18,24 @@ class OfflineTranslator {
     /** Pairs whose models are on the phone, so translating them doesn't wait for a download. */
     private val ready = mutableSetOf<Pair<Language, Language>>()
     private val downloading = mutableSetOf<Pair<Language, Language>>()
+    /** Pairs whose last download failed, e.g. without internet; the next use tries again. */
+    private val failed = mutableSetOf<Pair<Language, Language>>()
+
+    enum class State { READY, DOWNLOADING, FAILED, UNSUPPORTED }
+
+    /** Called on the main thread when a pair's models finish downloading. */
+    var onReady: (() -> Unit)? = null
+
+    fun state(source: Language, target: Language): State {
+        val pair = source to target
+        return when {
+            TranslateLanguage.fromLanguageTag(source.code) == null || TranslateLanguage.fromLanguageTag(target.code) == null -> State.UNSUPPORTED
+            pair in ready -> State.READY
+            pair in downloading -> State.DOWNLOADING
+            pair in failed -> State.FAILED
+            else -> State.DOWNLOADING
+        }
+    }
 
     private fun client(source: Language, target: Language): Translator? {
         val from = TranslateLanguage.fromLanguageTag(source.code) ?: return null
@@ -33,9 +51,17 @@ class OfflineTranslator {
         if (source == target || pair in ready || pair in downloading) return
         val translator = client(source, target) ?: return
         downloading.add(pair)
+        failed.remove(pair)
         translator.downloadModelIfNeeded(DownloadConditions.Builder().build())
-            .addOnSuccessListener { ready.add(pair) }
-            .addOnCompleteListener { downloading.remove(pair) }
+            .addOnSuccessListener {
+                ready.add(pair)
+                downloading.remove(pair)
+                onReady?.invoke()
+            }
+            .addOnFailureListener {
+                failed.add(pair)
+                downloading.remove(pair)
+            }
     }
 
     /**

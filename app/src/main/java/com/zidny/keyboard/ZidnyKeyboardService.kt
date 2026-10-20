@@ -51,9 +51,23 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         translator.translateQuick(text, target) { result ->
             // Typing moved on while this was translating: a newer one is on its way.
             if (!liveTranslate || keyboardView?.liveText != text) return@translateQuick
-            // Until the offline models are downloaded, the field shows what was typed.
-            if (result == null && translator.offlineEnabled) keyboardView?.setStatus("⏬ Menyiapkan paket bahasa offline…")
-            writeLive(result ?: text)
+            when (result) {
+                is TextTranslator.Quick.Done -> writeLive(result.text)
+                TextTranslator.Quick.Same -> writeLive(text)
+                // Until the models are on the phone the field shows what was typed, and the status says why.
+                TextTranslator.Quick.Downloading -> {
+                    keyboardView?.setStatus("⏬ Mengunduh paket bahasa ${target.displayName} (±30 MB, sekali aja)… tunggu bentar")
+                    writeLive(text)
+                }
+                TextTranslator.Quick.DownloadFailed -> {
+                    keyboardView?.setStatus("⚠️ Paket bahasa gagal diunduh, cek internet. Ketik lagi untuk coba ulang")
+                    writeLive(text)
+                }
+                TextTranslator.Quick.Off -> {
+                    keyboardView?.setStatus("⚡ Nyalakan Terjemahan kilat offline di ⚙️ biar terjemahan langsung jalan")
+                    writeLive(text)
+                }
+            }
         }
     }
 
@@ -109,6 +123,14 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         style = Language.loadStyle(this)
         settings = KeyboardSettings.load(this)
         liveTranslate = getSharedPreferences(KeyboardSettings.PREFS, MODE_PRIVATE).getBoolean(KEY_LIVE, false)
+        // Once a language's offline models arrive, the live line is translated without typing again.
+        translator.onOfflineReady = {
+            if (liveTranslate && !keyboardView?.liveText.isNullOrBlank()) {
+                keyboardView?.setStatus("✅ Paket bahasa siap")
+                liveHandler.removeCallbacks(runLiveTranslate)
+                liveHandler.post(runLiveTranslate)
+            }
+        }
         clipboard?.addPrimaryClipChangedListener(clipListener)
         getSharedPreferences(KeyboardSettings.PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(settingsListener)
         thread(name = "load-words") {
