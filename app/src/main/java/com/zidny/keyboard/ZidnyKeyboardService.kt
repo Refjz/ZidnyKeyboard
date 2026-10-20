@@ -36,6 +36,27 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     /** The user's abbreviations, reloaded each time the keyboard opens so edits in the settings apply. */
     private var shortcuts = TextShortcuts(emptyList())
 
+    /**
+     * Translating while typing, turned on and off by holding Terjemahkan and remembered between uses. The keys
+     * then type into the keyboard's own line, and the app's field shows the translation: [livePrefix] is what
+     * was in the field before, followed by the translation, and [liveWritten] is what this put there last.
+     */
+    private var liveTranslate = false
+    private val liveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var livePrefix = ""
+    private var liveWritten: String? = null
+    private val runLiveTranslate = Runnable {
+        val text = keyboardView?.liveText ?: return@Runnable
+        if (text.isBlank()) return@Runnable writeLive(text)
+        translator.translateQuick(text, target) { result ->
+            // Typing moved on while this was translating: a newer one is on its way.
+            if (!liveTranslate || keyboardView?.liveText != text) return@translateQuick
+            // Until the offline models are downloaded, the field shows what was typed.
+            if (result == null && translator.offlineEnabled) keyboardView?.setStatus("⏬ Menyiapkan paket bahasa offline…")
+            writeLive(result ?: text)
+        }
+    }
+
     /** What was typed as the topic for the 🎭 lines, replaced by the line the user picks. */
     private var lineTopic = ""
 
@@ -87,6 +108,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         target = Language.loadTarget(this)
         style = Language.loadStyle(this)
         settings = KeyboardSettings.load(this)
+        liveTranslate = getSharedPreferences(KeyboardSettings.PREFS, MODE_PRIVATE).getBoolean(KEY_LIVE, false)
         clipboard?.addPrimaryClipChangedListener(clipListener)
         getSharedPreferences(KeyboardSettings.PREFS, MODE_PRIVATE).registerOnSharedPreferenceChangeListener(settingsListener)
         thread(name = "load-words") {
@@ -109,6 +131,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         return KeyboardView(this, this, settings).also {
             keyboardView = it
             it.setTargetLanguage(target, style)
+            it.setLiveTranslate(liveTranslate)
             it.pickerHint = pickerHint()
             it.setStatus("Ketik, lalu tekan Terjemahkan")
         }
@@ -302,6 +325,10 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboardView?.setListening(false)
         keyboardView?.clearMessage()
         keyboardView?.closePanels()
+        liveHandler.removeCallbacks(runLiveTranslate)
+        liveWritten = null
+        livePrefix = ""
+        keyboardView?.clearLiveText()
         saveUserWords()
     }
 
@@ -445,6 +472,25 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onTranslate() {
         val ic = currentInputConnection ?: return
         val view = keyboardView ?: return
+        val live = view.liveText
+        if (liveTranslate && live.isNotBlank()) {
+            // The AI's translation of the live line replaces the quick one in the field.
+            view.setTranslating(true)
+            view.setStatus("AI merapikan terjemahan…")
+            translator.translate(live, target, TextTranslator.Options(style = style)) { result ->
+                if (result !is TextTranslator.Result.Success || !result.pending) view.setTranslating(false)
+                if (view.liveText != live) return@translate
+                when (result) {
+                    is TextTranslator.Result.Success -> {
+                        writeLive(result.text)
+                        if (!result.pending) view.setStatus(if (result.offline) "⚡ Offline · AI tidak terjangkau" else "✨ Dirapikan AI · ${style.displayName}")
+                    }
+                    is TextTranslator.Result.AlreadyInTarget -> view.setStatus("Sudah dalam bahasa ${result.language.displayName}")
+                    is TextTranslator.Result.Error -> view.setStatus(result.message)
+                }
+            }
+            return
+        }
         val original = currentText() ?: return
         if (original.isBlank()) {
             view.setStatus("Ketik dulu kalimatnya")
@@ -754,11 +800,59 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         val before = currentInputConnection?.getTextBeforeCursor(WORD_LOOKBACK, 0)
         updateAutoCaps(view, before)
         updateSuggestions(view, before ?: "")
+        // The app emptied its field, e.g. the message was sent: the next one starts fresh.
+        if (liveTranslate && liveWritten != null && currentText().isNullOrEmpty()) {
+            liveWritten = null
+            livePrefix = ""
+            view.clearLiveText()
+        }
+    }
+
+    override fun onToggleLiveTranslate() {
+        liveTranslate = !liveTranslate
+        // Kept outside KeyboardSettings, so switching it doesn't rebuild the keyboard.
+        getSharedPreferences(KeyboardSettings.PREFS, MODE_PRIVATE).edit().putBoolean(KEY_LIVE, liveTranslate).apply()
+        val view = keyboardView ?: return
+        view.setLiveTranslate(liveTranslate)
+        view.setStatus(
+            if (liveTranslate) "⚡ Terjemahan langsung nyala · tahan Terjemahkan untuk mematikan"
+            else "Terjemahan langsung mati",
+        )
+        livePrefix = currentText() ?: ""
+        liveWritten = null
+        if (liveTranslate && !settings.offlineTranslate) {
+            view.setStatus("⚡ Nyalakan Terjemahan kilat offline di ⚙️ biar terjemahan langsung bisa jalan")
+        }
+    }
+
+    override fun onLiveInput(text: String) {
+        liveHandler.removeCallbacks(runLiveTranslate)
+        liveHandler.postDelayed(runLiveTranslate, LIVE_DELAY_MS)
+    }
+
+    /** Puts [translation] after [livePrefix] in the field, unless the user changed the field some other way. */
+    private fun writeLive(translation: String) {
+        val ic = currentInputConnection ?: return
+        val current = currentText() ?: return
+        val expected = liveWritten ?: livePrefix
+        if (current != expected) {
+            // Edited outside the live line (a paste, an emoji, a tap on a suggestion): keep that as the new start.
+            livePrefix = current
+        }
+        val spacer = if (livePrefix.isEmpty() || livePrefix.last().isWhitespace() || translation.isEmpty()) "" else " "
+        val wanted = livePrefix + spacer + translation
+        if (wanted == current) return
+        ic.beginBatchEdit()
+        ic.setSelection(0, current.length)
+        ic.commitText(wanted, 1)
+        ic.endBatchEdit()
+        liveWritten = wanted
     }
 
     private fun updateSuggestions(view: KeyboardView, before: CharSequence) {
         val words = predictor
-        if (!settings.suggestions || words == null || !smartTypingAllowed()) {
+        // With live translation the keys don't type into the field, so suggestions for it would mislead.
+        if (!settings.suggestions || words == null || !smartTypingAllowed() || liveTranslate) {
             view.setSuggestions(emptyList())
             return
         }
@@ -819,7 +913,9 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     private companion object {
-        const val MAX_CHARS = 5000
+        const val KEY_LIVE = "live_translate"
+        const val LIVE_DELAY_MS = 350L
+                const val MAX_CHARS = 5000
         const val MAX_CLIP_CHARS = 1000
         const val CLIPBOARD_FILE = "clipboard_history.json"
         const val PASTED_IMAGES_DIR = "pasted"

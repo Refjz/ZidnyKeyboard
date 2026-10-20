@@ -110,6 +110,26 @@ class TextTranslator(context: Context) {
     }
 
     /**
+     * A fast translation for live translation while typing, made only on the phone: asking the server at every
+     * pause would use up the daily Play Integrity quota. Calls [onResult] on the main thread with the result,
+     * or null when there is none: the text is already in [target], or the offline models are still downloading.
+     */
+    fun translateQuick(text: String, target: Language, onResult: (String?) -> Unit) {
+        identifier.identifyLanguage(text)
+            .addOnSuccessListener { tag ->
+                val source = when (tag) {
+                    in INDONESIAN_LOOKALIKES -> Language.INDONESIAN
+                    else -> Language.fromCode(tag) ?: if (target == Language.INDONESIAN) Language.ENGLISH else Language.INDONESIAN
+                }
+                if (source == target) return@addOnSuccessListener onResult(null)
+                val input = if (source == Language.INDONESIAN) SlangNormalizer.normalize(text) else text
+                if (!offlineEnabled) return@addOnSuccessListener onResult(null)
+                offline.translate(input, source, target, onResult)
+            }
+            .addOnFailureListener { onResult(null) }
+    }
+
+    /**
      * Suggests short replies to [message], a message the user received, written in the message's own
      * language so the user can send one straight back. Calls [onResult] on the main thread.
      */
