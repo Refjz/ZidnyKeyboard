@@ -22,4 +22,12 @@ class LanguageTest {
         assertNull(Language.parseAppChoice(null))
         assertNull(Language.parseAppChoice("KLINGON|CASUAL"))
     }
+
+    @Test
+    fun knowsTheNewLanguagesByTheirCodes() {
+        assertEquals(Language.FILIPINO, Language.fromCode("tl"))
+        assertEquals(Language.FILIPINO, Language.fromCode("fil"))
+        assertEquals(Language.KOREAN, Language.fromCode("ko"))
+        assertEquals(Language.RUSSIAN, Language.fromCode("ru"))
+    }
 }

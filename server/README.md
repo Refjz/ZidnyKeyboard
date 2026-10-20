@@ -11,7 +11,7 @@ Pirated or modified copies get `403 not_genuine`.
 
 `POST /translate` with header `X-Integrity-Token` and body
 `{"text": "...", "source": "id", "target": "en", "style": "casual", "mode": "translate", "explain": true}`.
-Languages: `id`, `en`, `fr`, `zh`, `ja`. Up to 2000 characters. Returns `{"text": "...", "meaning": "..."}`.
+Languages: `id`, `en`, `fr`, `zh`, `ja`, `ko`, `es`, `tl` (Filipino), `vi`, `th`, `ru`. Up to 2000 characters. Returns `{"text": "...", "meaning": "..."}`.
 
 - `style`: `casual` (default), `polite` or `formal`, how the result should sound.
 - `mode`: `translate` (default), or `polish` to fix the grammar of a text in its own language
