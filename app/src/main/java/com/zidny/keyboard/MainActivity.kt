@@ -342,6 +342,11 @@ class MainActivity : AppCompatActivity() {
         addView(switch(getString(R.string.translate_preview), settings.translatePreview) {
             update(settings.copy(translatePreview = it))
         })
+        addView(switch(
+            tr("⚡  Terjemahan kilat offline, lalu dirapikan AI (unduh ±30 MB per bahasa)",
+                "⚡  Instant offline translation, then polished by AI (downloads ~30 MB per language)"),
+            settings.offlineTranslate,
+        ) { update(settings.copy(offlineTranslate = it)) })
         addView(switch(getString(R.string.show_meaning), settings.showMeaning) { update(settings.copy(showMeaning = it)) })
         addView(switch(getString(R.string.per_app_language), settings.perAppLanguage) {
             update(settings.copy(perAppLanguage = it))

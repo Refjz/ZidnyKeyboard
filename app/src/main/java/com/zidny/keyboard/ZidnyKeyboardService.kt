@@ -130,6 +130,8 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         offerRecentClip()
         translateClipboard()
         keyboardView?.showToolbarBriefly()
+        translator.offlineEnabled = settings.offlineTranslate
+        translator.warmUp(target)
     }
 
     /** Label for the enter key, e.g. "Kirim" when the app wants a send action. */
@@ -452,22 +454,43 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         val options = TextTranslator.Options(style = style, explain = settings.showMeaning, polishSameLanguage = true)
         view.setTranslating(true)
         view.setStatus("Menerjemahkan ke ${goal.displayName}…")
+        // The offline result goes in first; the AI's then replaces it, unless the user edited it meanwhile.
+        var shown: String? = null
         translator.translate(original, goal, options) { result ->
-            view.setTranslating(false)
+            if (result is TextTranslator.Result.Success && result.offline && result.text == shown) {
+                // The AI couldn't be reached: the offline result already in the field stays.
+                view.setTranslating(false)
+                view.setStatus("⚡ Terjemahan offline · AI tidak terjangkau")
+                return@translate
+            }
+            if (!(result is TextTranslator.Result.Success && result.pending)) view.setTranslating(false)
             when (result) {
                 is TextTranslator.Result.Success -> {
-                    val label = if (result.polished) "${goal.displayName} dirapikan · ${options.style.displayName}"
+                    val route = if (result.polished) "${goal.displayName} dirapikan · ${options.style.displayName}"
                     else "${result.source.displayName} → ${goal.displayName} · ${options.style.displayName}"
+                    val label = when {
+                        result.pending -> "⚡ $route · AI merapikan…"
+                        result.offline -> "⚡ $route (offline)"
+                        else -> route
+                    }
                     val meaning = result.meaning
+                    val from = shown ?: original
+                    if (shown != null && currentText() != shown) {
+                        // The user already edited the offline result, so it's theirs now.
+                        view.setStatus(label)
+                        return@translate
+                    }
                     if (settings.translatePreview) {
                         view.setStatus(label)
                         val body = if (meaning != null) "${result.text}\n\nArtinya: $meaning" else result.text
                         view.showMessage("🌐", "Hasil (${label})", body, "Pakai") {
                             view.hideMessagePanel()
-                            replaceAll(ic, original, result.text, label)
+                            val current = shown ?: original
+                            if (replaceAll(ic, current, result.text, label, undoTo = original)) shown = result.text
                         }
-                    } else {
-                        if (replaceAll(ic, original, result.text, label) && meaning != null) {
+                    } else if (replaceAll(ic, from, result.text, label, undoTo = original)) {
+                        shown = result.text
+                        if (meaning != null) {
                             // The full meaning is one tap away on the 💡 chip or the status line.
                             view.setStatus("Artinya: $meaning")
                             view.showMessage("💡", "Artinya dalam bahasa Indonesia", meaning, open = false)
@@ -484,6 +507,8 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     /** Replaces the whole field, but only if it still holds [original]. Returns whether it did. */
     private fun replaceAll(
         ic: android.view.inputmethod.InputConnection, original: String, replacement: String, label: String,
+        /** What ↶ goes back to, when it isn't [original] (e.g. the user's text under an offline result). */
+        undoTo: String = original,
     ): Boolean {
         val view = keyboardView ?: return false
         if (currentInputConnection !== ic || currentText() != original) {
@@ -494,7 +519,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         ic.setSelection(0, original.length)
         ic.commitText(replacement, 1)
         ic.endBatchEdit()
-        lastTranslation = Pair(original, replacement)
+        lastTranslation = Pair(undoTo, replacement)
         view.setUndoVisible(true)
         view.setStatus(label)
         return true
