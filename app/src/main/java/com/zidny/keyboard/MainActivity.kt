@@ -90,6 +90,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(16), dp(16), dp(16), dp(24))
         }
         root.addView(hero())
+        CrashLog.read(this)?.let { root.addView(crashCard(it)) }
         root.addView(EditText(this).apply {
             hint = getString(R.string.try_here)
             setTextColor(textColor)
@@ -417,6 +418,22 @@ class MainActivity : AppCompatActivity() {
         showList()
         addView(switch(tr("Pakai singkatan", "Use shortcuts"), settings.shortcuts, options) { update(settings.copy(shortcuts = it)) })
         addView(options)
+    }
+
+    /** The last time the keyboard crashed, ready to copy and send, since a crashed keyboard just disappears. */
+    private fun crashCard(report: String): View = card("⚠️", getString(R.string.crash_title)).apply {
+        addView(hint(getString(R.string.crash_hint)))
+        addView(hint(report.lineSequence().take(6).joinToString("\n")))
+        addView(button(getString(R.string.crash_copy)) {
+            getSystemService(android.content.ClipboardManager::class.java)
+                ?.setPrimaryClip(android.content.ClipData.newPlainText("ZidnyKeyboard crash", report))
+            Toast.makeText(this@MainActivity, R.string.crash_copied, Toast.LENGTH_SHORT).show()
+        })
+        val card = this
+        addView(button(getString(R.string.crash_clear)) {
+            CrashLog.clear(this@MainActivity)
+            card.visibility = View.GONE
+        })
     }
 
     private fun voiceCard() = card("🎤", getString(R.string.voice_title)).apply {
