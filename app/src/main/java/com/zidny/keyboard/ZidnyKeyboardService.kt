@@ -154,6 +154,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         target = Language.loadTarget(this)
         style = Language.loadStyle(this)
         settings = KeyboardSettings.load(this)

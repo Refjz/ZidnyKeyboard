@@ -37,4 +37,9 @@
     <string name="voice_hint">Tekan 🎤 di keyboard, bicara dalam bahasa Indonesia, lalu hasilnya langsung diterjemahkan.</string>
     <string name="allow_microphone">Izinkan mikrofon</string>
     <string name="credits">Daftar kata untuk saran: FrequencyWords oleh Hermit Dave (CC BY-SA 4.0), dari OpenSubtitles.</string>
+    <string name="crash_title">Keyboard sempat error</string>
+    <string name="crash_hint">Keyboard tertutup sendiri karena error. Salin laporannya lalu kirim ke pengembang biar bisa dibenerin.</string>
+    <string name="crash_copy">📋 Salin laporan</string>
+    <string name="crash_clear">Hapus laporan</string>
+    <string name="crash_copied">Laporan disalin</string>
 </resources>
