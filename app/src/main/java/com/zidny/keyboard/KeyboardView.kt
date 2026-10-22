@@ -330,11 +330,23 @@ class KeyboardView(
         setToolbarShown(!toolbarShown)
     }.apply { visibility = if (settings.autoHideToolbar) VISIBLE else GONE }
 
+    /**
+     * Autofill suggestions (a saved address, phone number or password from Samsung Pass or Google) shown in the
+     * suggestion bar, like Gboard does. Without them the autofill service opens its own pop-up over the app, and
+     * that pop-up takes the focus and closes the keyboard.
+     */
+    private val inlineChips = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+    private val inlineRow = HorizontalScrollView(context).apply {
+        isHorizontalScrollBarEnabled = false
+        visibility = GONE
+        addView(inlineChips, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT))
+    }
     private val strip = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         addView(toolbarToggle, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(messageChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
         addView(recentClipChip, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        addView(inlineRow, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         addView(statusText, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         suggestionViews.forEach {
             it.visibility = GONE
@@ -473,13 +485,26 @@ class KeyboardView(
 
     /** Shows [words] in the suggestion bar, or the status line when there are none. */
     fun setSuggestions(words: List<String>) {
-        val any = words.any { it.isNotEmpty() }
+        lastWords = words
+        val inline = inlineRow.visibility == VISIBLE
+        val any = !inline && words.any { it.isNotEmpty() }
         suggestionViews.forEachIndexed { i, view ->
             val word = words.getOrNull(i) ?: ""
             if (view.text.toString() != word) view.text = word
             setVisible(view, any)
         }
-        setVisible(statusText, !any)
+        setVisible(statusText, !any && !inline)
+    }
+    private var lastWords: List<String> = emptyList()
+
+    /** Shows autofill suggestions in place of the word suggestions, or brings those back when [views] is empty. */
+    fun setInlineSuggestions(views: List<View>) {
+        inlineChips.removeAllViews()
+        views.forEach {
+            inlineChips.addView(it, LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).withMargins())
+        }
+        inlineRow.visibility = if (views.isEmpty()) GONE else VISIBLE
+        setSuggestions(lastWords)
     }
 
     private fun setVisible(view: View, visible: Boolean) {

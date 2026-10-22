@@ -17,6 +17,13 @@ import android.text.InputType
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InlineSuggestionsRequest
+import android.view.inputmethod.InlineSuggestionsResponse
+import android.widget.inline.InlinePresentationSpec
+import android.util.Size
+import androidx.annotation.RequiresApi
+import androidx.autofill.inline.UiVersions
+import androidx.autofill.inline.v1.InlineSuggestionUi
 import androidx.core.content.FileProvider
 import androidx.core.view.inputmethod.EditorInfoCompat
 import androidx.core.view.inputmethod.InputConnectionCompat
@@ -226,6 +233,44 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     /**
+     * Asks autofill services (Samsung Pass, Google) to show their suggestions in the keyboard's suggestion bar.
+     * Otherwise they open their own pop-up over the app, which takes the focus and closes the keyboard.
+     */
+    @RequiresApi(Build.VERSION_CODES.R)
+    override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest {
+        val density = resources.displayMetrics.density
+        val height = (INLINE_HEIGHT_DP * density).toInt()
+        val style = UiVersions.newStylesBuilder().addStyle(InlineSuggestionUi.newStyleBuilder().build()).build()
+        val spec = InlinePresentationSpec.Builder(
+            Size((INLINE_MIN_WIDTH_DP * density).toInt(), height),
+            Size(resources.displayMetrics.widthPixels, height),
+        ).setStyle(style).build()
+        return InlineSuggestionsRequest.Builder(listOf(spec))
+            .setMaxSuggestionCount(InlineSuggestionsRequest.SUGGESTION_COUNT_UNLIMITED)
+            .build()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
+        val suggestions = response.inlineSuggestions
+        if (suggestions.isEmpty()) {
+            keyboardView?.setInlineSuggestions(emptyList())
+            return true
+        }
+        val views = arrayOfNulls<View>(suggestions.size)
+        var left = suggestions.size
+        val size = Size(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, (INLINE_HEIGHT_DP * resources.displayMetrics.density).toInt())
+        suggestions.forEachIndexed { i, suggestion ->
+            suggestion.inflate(this, size, mainExecutor) { view ->
+                views[i] = view
+                left--
+                if (left == 0) keyboardView?.setInlineSuggestions(views.filterNotNull())
+            }
+        }
+        return true
+    }
+
+    /**
      * Android shows a full-screen text box instead of the app in landscape by default. Keep the app visible
      * with the keyboard under it, like Gboard and Samsung do.
      */
@@ -385,6 +430,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         keyboardView?.closePanels()
         resetLive()
         keyboardView?.clearLiveText()
+        keyboardView?.setInlineSuggestions(emptyList())
         saveUserWords()
     }
 
@@ -982,6 +1028,8 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     private companion object {
         const val KEY_LIVE = "live_translate"
+        const val INLINE_HEIGHT_DP = 32
+        const val INLINE_MIN_WIDTH_DP = 80
         const val LIVE_DELAY_MS = 40L
                 const val MAX_CHARS = 5000
         const val MAX_CLIP_CHARS = 1000
