@@ -361,6 +361,18 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         }
     }
 
+    override fun fieldText(): String = currentText() ?: ""
+
+    override fun onTextTool(action: TextTools.Action) {
+        val ic = currentInputConnection ?: return
+        val view = keyboardView ?: return
+        val original = currentText() ?: return
+        if (original.isBlank()) return view.setStatus("Ketik dulu tulisannya, lalu pilih 🔤")
+        val changed = TextTools.apply(action, original)
+        if (changed == original) return view.setStatus("Tulisan sudah begitu")
+        replaceAll(ic, original, changed, "🔤 ${action.label.substringAfter("  ")}")
+    }
+
     override fun onWriteLines(mood: LineMood, language: Language) {
         val view = keyboardView ?: return
         // What the user typed before opening the panel tells who or what the lines are about.
@@ -441,6 +453,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         // The text or cursor changed (typing, a tap, a swipe on the space bar, or a translation): re-check
         // capitals and suggestions. This runs after every key, so the key handlers don't repeat it.
         refreshTypingState()
+        keyboardView?.onFieldChanged()
     }
 
     override fun onText(text: String) {

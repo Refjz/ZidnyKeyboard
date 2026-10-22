@@ -169,6 +169,8 @@ data class KeyboardSettings(
     val appCalendar: Boolean = true,
     /** 𝓐 letter styles, in 🧰 since they were moved off the toolbar. */
     val appFonts: Boolean = true,
+    /** 🔤 change case, clean up spaces and count words. */
+    val appText: Boolean = true,
     /** Show the phone's calendar events and free time in 📅; needs the calendar permission. */
     val calendarEvents: Boolean = false,
     val toolKaomoji: Boolean = false,
@@ -249,6 +251,7 @@ data class KeyboardSettings(
                 appClock = p.getBoolean("app_clock", defaults.appClock),
                 appCalendar = p.getBoolean("app_calendar", defaults.appCalendar),
                 appFonts = p.getBoolean("app_fonts", defaults.appFonts),
+                appText = p.getBoolean("app_text", defaults.appText),
                 calendarEvents = p.getBoolean("calendar_events", defaults.calendarEvents),
                 toolKaomoji = p.getBoolean("tool_kaomoji", defaults.toolKaomoji),
                 toolLines = p.getBoolean("tool_lines", defaults.toolLines),
@@ -303,6 +306,7 @@ data class KeyboardSettings(
                 .putBoolean("app_clock", settings.appClock)
                 .putBoolean("app_calendar", settings.appCalendar)
                 .putBoolean("app_fonts", settings.appFonts)
+                .putBoolean("app_text", settings.appText)
                 .putBoolean("calendar_events", settings.calendarEvents)
                 .putBoolean("tool_kaomoji", settings.toolKaomoji)
                 .putBoolean("tool_lines", settings.toolLines)
