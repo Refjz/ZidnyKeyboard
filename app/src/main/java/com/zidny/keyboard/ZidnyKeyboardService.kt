@@ -73,7 +73,15 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         val generation = liveGeneration
         translator.translateQuick(text, target) { result ->
             liveBusy = false
-            if (!liveTranslate || generation != liveGeneration) return@translateQuick
+            if (!liveTranslate) return@translateQuick
+            if (generation != liveGeneration) {
+                // A new message started meanwhile; if its typing waited on this one, translate it now.
+                if (liveAgain) {
+                    liveAgain = false
+                    translateLive()
+                }
+                return@translateQuick
+            }
             liveSource = text
             liveTranslation = when (result) {
                 is TextTranslator.Quick.Done -> result.text
@@ -908,6 +916,11 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         val before = ic.getTextBeforeCursor(MAX_CHARS, 0) ?: return null
         val selected = ic.getSelectedText(0) ?: ""
         val after = ic.getTextAfterCursor(MAX_CHARS, 0) ?: ""
+        // A longer text comes back cut off, and replacing it by position would then overwrite the wrong part.
+        if (before.length >= MAX_CHARS || after.length >= MAX_CHARS) {
+            keyboardView?.setStatus("Teksnya kepanjangan, maksimal $MAX_CHARS huruf")
+            return null
+        }
         return "$before$selected$after"
     }
 
@@ -921,10 +934,18 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         updateAutoCaps(view, before)
         updateSuggestions(view, before ?: "")
         // The app emptied its field, e.g. the message was sent: the next one starts fresh.
-        if (liveTranslate && liveWritten != null && currentText().isNullOrEmpty()) {
+        if (liveTranslate && liveWritten != null && fieldEmpty()) {
             resetLive()
             view.clearLiveText()
         }
+    }
+
+    /** Whether the field holds nothing; usually one tiny read, as this runs after every key press. */
+    private fun fieldEmpty(): Boolean {
+        val ic = currentInputConnection ?: return true
+        return ic.getTextBeforeCursor(1, 0).isNullOrEmpty() &&
+            ic.getTextAfterCursor(1, 0).isNullOrEmpty() &&
+            ic.getSelectedText(0).isNullOrEmpty()
     }
 
     override fun onToggleLiveTranslate() {
@@ -1030,12 +1051,20 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
             emptyMap()
         }
 
+    private val saveWordsLock = Any()
+
+    /** Saves the learned words when the keyboard closes, only if typing taught it something new. */
     private fun saveUserWords() {
-        val words = predictor?.userWords()?.toMap() ?: return
+        val learned = predictor ?: return
+        if (!learned.changed) return
+        learned.changed = false
+        val words = learned.userWords().toMap()
         thread(name = "save-words") {
             // Keep the file small: only the most used words.
             val top = words.entries.sortedByDescending { it.value }.take(MAX_USER_WORDS)
-            userWordsFile.writeText(top.joinToString("\n") { "${it.key}\t${it.value}" })
+            synchronized(saveWordsLock) {
+                userWordsFile.writeText(top.joinToString("\n") { "${it.key}\t${it.value}" })
+            }
         }
     }
 
@@ -1044,7 +1073,7 @@ class ZidnyKeyboardService : InputMethodService(), KeyboardView.Listener {
         const val INLINE_HEIGHT_DP = 32
         const val INLINE_MIN_WIDTH_DP = 80
         const val LIVE_DELAY_MS = 40L
-                const val MAX_CHARS = 5000
+        const val MAX_CHARS = 5000
         const val MAX_CLIP_CHARS = 1000
         const val CLIPBOARD_FILE = "clipboard_history.json"
         const val PASTED_IMAGES_DIR = "pasted"

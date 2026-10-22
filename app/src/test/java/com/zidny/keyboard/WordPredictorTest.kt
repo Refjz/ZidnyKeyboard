@@ -40,4 +40,15 @@ class WordPredictorTest {
         assertNull(p.correction("makam"))
         assertTrue("makam" in WordPredictor(listOf(listOf("makan"))).apply { addUserWords(p.userWords()) }.suggest("mak"))
     }
+
+    @Test
+    fun remembersWhetherItLearnedSomethingNew() {
+        val fresh = WordPredictor(listOf(listOf("aku")))
+        fresh.addUserWords(mapOf("bro" to 3))
+        assertEquals(false, fresh.changed)
+        fresh.learn("x")
+        assertEquals(false, fresh.changed)
+        fresh.learn("gaskeun")
+        assertEquals(true, fresh.changed)
+    }
 }

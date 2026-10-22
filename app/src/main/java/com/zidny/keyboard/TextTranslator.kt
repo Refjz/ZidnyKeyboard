@@ -91,6 +91,13 @@ class TextTranslator(context: Context) {
                 // Polishing keeps the user's own words, so slang is only normalised before translating.
                 val input = if (source == Language.INDONESIAN && !polish) SlangNormalizer.normalize(text) else text
                 val request = Request(input, source, target, options.style, polish, options.explain)
+                if (input.length > SERVER_MAX_CHARS && !polish && offlineEnabled) {
+                    // Too long for the AI: the phone's own translation is all there is.
+                    offline.translate(input, source, target) { quick ->
+                        onResult(if (quick != null) Result.Success(quick, source, offline = true) else TOO_LONG)
+                    }
+                    return@addOnSuccessListener
+                }
                 if (polish || !offlineEnabled) return@addOnSuccessListener translateOnServer(request, onResult)
                 var serverDone = false
                 var quickResult: String? = null
@@ -254,6 +261,8 @@ class TextTranslator(context: Context) {
             onResult(Result.Error("Server terjemahan belum diatur"))
             return
         }
+        // The server turns longer texts down, which would otherwise show up as a server problem.
+        if (request.text.length > SERVER_MAX_CHARS) return onResult(TOO_LONG)
         integrity.token(sha256Hex(request.hashInput)) { token ->
             thread(name = "translate") {
                 val result = try {
@@ -316,6 +325,9 @@ class TextTranslator(context: Context) {
 
     private companion object {
         const val TIMEOUT_MS = 15_000
+        /** Must match MAX_CHARS in server/src/index.js. */
+        const val SERVER_MAX_CHARS = 2000
+        val TOO_LONG = Result.Error("Teksnya kepanjangan buat AI, maksimal $SERVER_MAX_CHARS huruf")
         val INDONESIAN_LOOKALIKES = setOf("ms", "jv", "su")
         val NOT_GENUINE = Result.Error("Terjemahan hanya untuk aplikasi resmi dari Google Play")
         val SERVER_PROBLEM = Result.Error("Server terjemahan sedang bermasalah, coba lagi")

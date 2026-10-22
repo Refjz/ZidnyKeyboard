@@ -12,6 +12,9 @@ class WordPredictor(lists: List<List<String>>) {
     private val sorted: Array<String>
     private val userCounts = HashMap<String, Int>()
 
+    /** Set when [learn] adds to the user's words, so they are only saved again when something changed. */
+    var changed = false
+
     init {
         lists.forEachIndexed { listIndex, words ->
             val weight = if (listIndex == 0) 1.5 else 1.0
@@ -33,6 +36,7 @@ class WordPredictor(lists: List<List<String>>) {
         val w = word.lowercase()
         if (w.length < 2 || w.length > 30) return
         userCounts[w] = (userCounts[w] ?: 0) + 1
+        changed = true
     }
 
     fun userWords(): Map<String, Int> = userCounts
