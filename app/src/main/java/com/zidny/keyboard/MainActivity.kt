@@ -331,6 +331,9 @@ class MainActivity : AppCompatActivity() {
             switch(tr("𝓐  Gaya huruf (𝐁𝐨𝐥𝐝, 𝓢𝓪𝓶𝓫𝓾𝓷𝓰, ⓑⓤⓑⓑⓛⓔ)", "𝓐  Text styles (𝐁𝐨𝐥𝐝, 𝓢𝓬𝓻𝓲𝓹𝓽, ⓑⓤⓑⓑⓛⓔ)"), settings.appFonts) {
                 update(settings.copy(appFonts = it))
             },
+            switch(tr("🔤  Rapikan teks (HURUF BESAR, spasi dobel, hitung kata)", "🔤  Tidy text (UPPER CASE, double spaces, word count)"), settings.appText) {
+                update(settings.copy(appText = it))
+            },
         )
         addView(switch(tr("🧰  Tools", "🧰  Tools"), settings.toolApps, apps) { update(settings.copy(toolApps = it)) })
         addView(apps)

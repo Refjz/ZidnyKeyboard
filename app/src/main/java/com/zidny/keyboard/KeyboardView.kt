@@ -77,6 +77,10 @@ class KeyboardView(
         fun onWriteLines(mood: LineMood, language: Language)
         /** The user tapped one of the 🎭 lines to send it. */
         fun onLinePicked(text: String)
+        /** Everything in the text field, for the 🔤 app's counts; empty when it can't be read. */
+        fun fieldText(): String
+        /** The user picked how the 🔤 app should change everything in the text field. */
+        fun onTextTool(action: TextTools.Action)
     }
 
     enum class ShiftState { OFF, ON, LOCKED }
@@ -85,7 +89,7 @@ class KeyboardView(
     private enum class Panel {
         KEYS, PICKER, CLIPBOARD, EMOJI, REPLIES, TRANSLATOR, FONTS, KAOMOJI, LINES,
         // The 🧰 menu and the small apps in it.
-        TOOLS, CALCULATOR, CONVERTER, CLOCK, CALENDAR,
+        TOOLS, CALCULATOR, CONVERTER, CLOCK, CALENDAR, TEXT,
     }
 
     private var panel = Panel.KEYS
@@ -658,6 +662,7 @@ class KeyboardView(
             Panel.REPLIES -> return renderReplies()
             Panel.TRANSLATOR -> renderTranslateBox()
             Panel.FONTS -> return renderFonts()
+            Panel.TEXT -> return renderTextTools()
             Panel.KAOMOJI -> return renderKaomoji()
             Panel.LINES -> return renderLines()
             Panel.KEYS -> {}
@@ -1070,6 +1075,38 @@ class KeyboardView(
         addShrinkable(bottomKeys(), keyRowHeight())
     }
 
+    /** The field's text or cursor changed: keeps the 🔤 counts up to date. */
+    fun onFieldChanged() {
+        if (panel == Panel.TEXT) render()
+    }
+
+    /** Changes the case or spacing of everything in the field, and counts its characters and words. */
+    private fun renderTextTools() {
+        val stats = TextTools.stats(listener.fieldText())
+        content.addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(backToTools(), wrapParams())
+            addView(caption("${stats.characters} karakter · ${stats.words} kata · ${stats.lines} baris"),
+                LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
+        }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(TOOL_HEADER_DP)))
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        TextTools.Action.entries.chunked(2).forEach { pair ->
+            grid.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                pair.forEach { action ->
+                    addView(toolbarButton { listener.onTextTool(action) }.apply {
+                        text = action.label
+                        textSize = 14f
+                    }, LinearLayout.LayoutParams(0, dp(44), 1f).withMargins())
+                }
+                if (pair.size == 1) addView(View(context), LinearLayout.LayoutParams(0, dp(44), 1f))
+            })
+        }
+        grid.addView(note("Berlaku ke semua tulisan di kolom. Salah pilih? Tekan ↶ buat balikin."))
+        addShrinkable(ScrollView(context).apply { addView(grid) }, panelHeight(dp(TOOL_HEADER_DP)))
+        addShrinkable(bottomKeys(), keyRowHeight())
+    }
+
     /** Text faces like (◕‿◕), grouped by feeling. */
     private fun renderKaomoji() {
         val tabs = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -1369,6 +1406,7 @@ class KeyboardView(
         if (settings.appClock) Triple(Panel.CLOCK, "🕐", "Zona waktu") else null,
         if (settings.appCalendar) Triple(Panel.CALENDAR, "📅", "Kalender") else null,
         if (settings.appFonts) Triple(Panel.FONTS, "𝓐", "Gaya huruf") else null,
+        if (settings.appText) Triple(Panel.TEXT, "🔤", "Rapikan teks") else null,
     )
 
     private fun openTool(target: Panel) {
@@ -2175,6 +2213,6 @@ class KeyboardView(
         const val EMOJI_COLUMNS = 8
         const val LANGUAGES_PER_ROW = 4
         const val TOOL_HEADER_DP = 38
-        val TOOL_APPS = setOf(Panel.TOOLS, Panel.CALCULATOR, Panel.CONVERTER, Panel.CLOCK, Panel.CALENDAR, Panel.FONTS)
+        val TOOL_APPS = setOf(Panel.TOOLS, Panel.CALCULATOR, Panel.CONVERTER, Panel.CLOCK, Panel.CALENDAR, Panel.FONTS, Panel.TEXT)
     }
 }
